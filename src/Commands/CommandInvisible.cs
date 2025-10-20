@@ -19,10 +19,8 @@ public class CommandInvisible
             if (Util.IsPlayerValid(caller))
                 Util.ServerPrintToChat(caller!, $"Toggled invisiblity on {command.ArgString}");
 
-            if (Globals.InvisiblePlayers.ContainsKey(player))
+            if (Globals.InvisiblePlayers.Remove(player))
             {
-                Globals.InvisiblePlayers.Remove(player);
-                
                 var pawn = player.PlayerPawn.Value;
                 pawn!.Render = Color.FromArgb(255, pawn.Render);
                 Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");

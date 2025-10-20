@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Memory;
@@ -14,12 +15,12 @@ public static class Util
         return player.Pawn.Value!.CBodyComponent!.SceneNode!.GetSkeletonInstance().ModelState.ModelName;
     }
 
-    public static bool IsPlayerValid(CCSPlayerController? plr) 
-    { 
-        if (plr == null) return false;
-        if (plr.PlayerPawn == null) return false;
-        return plr.IsValid || plr.PlayerPawn.IsValid; 
-    } 
+    public static bool IsPlayerValid([NotNullWhen(true)] CCSPlayerController? plr) => plr != null &&
+               plr.IsValid &&
+               plr.PlayerPawn != null &&
+               plr.PlayerPawn.IsValid &&
+               plr.Connected == PlayerConnectedState.PlayerConnected &&
+               !plr.IsHLTV;
 
     public static List<CCSPlayerController> GetValidPlayers()
     {
@@ -47,5 +48,24 @@ public static class Util
     public static void ServerPrintToChat(CCSPlayerController player, string message)
     {
         player.PrintToChat($" {ChatColors.Green}[SERVER]{ChatColors.White} {message}");
+    }
+
+    public static List<CGameSceneNode> GetChildrenRecursive(CGameSceneNode gameSceneNode)
+    {
+        List<CGameSceneNode> children = [];
+        var currentChild = gameSceneNode.Child;
+        while (true)
+        {
+            if (currentChild == null) break;
+            children.Add(currentChild);
+            currentChild = currentChild.NextSibling;
+        }
+
+        foreach (var child in children)
+        {
+            children.AddRange(GetChildrenRecursive(child));
+        }
+
+        return children;
     }
 }

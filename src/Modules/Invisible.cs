@@ -1,6 +1,7 @@
 using System.Drawing;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Utils;
 using Funnies.Commands;
 
@@ -8,12 +9,22 @@ namespace Funnies.Modules;
 
 public class Invisible
 {
+
+    private static List<CEntityInstance> _entities = [];
+
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
         // TODO: Should store these but dont know a good way :/
         var gameRules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").First();
 
+        foreach (var entity in _entities)
+        {
+            if (!Globals.InvisiblePlayers.ContainsKey(player))
+                info.TransmitEntities.Remove(entity);
+        }
+
         if (gameRules.GameRules!.WarmupPeriod) return;
+
         var c4s = Utilities.FindAllEntitiesByDesignerName<CC4>("weapon_c4");
 
         if (c4s.Any())
@@ -28,6 +39,8 @@ public class Invisible
 
     public static void OnTick()
     {
+        _entities.Clear();
+        
         foreach (var invis in Globals.InvisiblePlayers)
         {
             if (!Util.IsPlayerValid(invis.Key)) continue;
@@ -52,90 +65,67 @@ public class Invisible
             pawn!.Render = Color.FromArgb((int)alpha, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
 
-            foreach (var weapon in pawn.WeaponServices!.MyWeapons)
+            if (alpha < 128f)
             {
-                weapon.Value!.Render = pawn!.Render;
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+                foreach (var weapon in pawn.WeaponServices!.MyWeapons)
+                {
+                    _entities.Add(weapon.Value!);
+                }
             }
         }
     }
 
     public static HookResult OnPlayerSound(EventPlayerSound @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, @event.Duration * 2);
 
-        data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + (@event.Duration * 2);
-
-        Globals.InvisiblePlayers[player!] = data;
         return HookResult.Continue;
     }
 
     public static HookResult OnPlayerShoot(EventBulletImpact @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, 0.5f);
 
-        data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + 0.5f;
-
-        Globals.InvisiblePlayers[player!] = data;
         return HookResult.Continue;
     }
 
     public static HookResult OnPlayerStartPlant(EventBombBeginplant @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, 1f);
 
-        data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + 1f;
-
-        Globals.InvisiblePlayers[player!] = data;
         return HookResult.Continue;
     }
 
     public static HookResult OnPlayerStartDefuse(EventBombBegindefuse @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, 1f);
 
-        data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + 1f;
-
-        Globals.InvisiblePlayers[player!] = data;
         return HookResult.Continue;
     }
 
     public static HookResult OnPlayerReload(EventWeaponReload @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, 1.5f);
 
-        data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + 1.5f;
-
-        Globals.InvisiblePlayers[player!] = data;
         return HookResult.Continue;
     }
 
     public static HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return HookResult.Continue;
+        SetPlayerInvisibleFor(@event.Userid, 0.5f);
+
+        return HookResult.Continue;
+    }
+
+    private static void SetPlayerInvisibleFor(CCSPlayerController player, float time)
+    {
+        if (!Util.IsPlayerValid(player)) return;
+        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return;
 
         data.StartTime = Server.CurrentTime;
-        data.EndTime = Server.CurrentTime + 0.5f;
+        data.EndTime = Server.CurrentTime + time;
 
         Globals.InvisiblePlayers[player!] = data;
-        return HookResult.Continue;
     }
 
     public static void Setup()
