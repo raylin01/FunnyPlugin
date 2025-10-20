@@ -58,17 +58,27 @@ public class Invisible
             {
                 pawn!.EntitySpottedState.Spotted = false;
                 pawn!.EntitySpottedState.SpottedByMask[0] = 0;
+                _entities.Add(pawn);
             }
+            else
+                _entities.Remove(pawn);
 
             invis.Key.PrintToCenterHtml(string.Concat(Enumerable.Repeat("&#9608;", progress)) + string.Concat(Enumerable.Repeat("&#9617;", 20 - progress)));
 
             pawn!.Render = Color.FromArgb((int)alpha, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
 
-            if (alpha < 128f)
+            pawn.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
+
+            foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
-                foreach (var weapon in pawn.WeaponServices!.MyWeapons)
+                weapon.Value!.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
+                Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
+
+                if (alpha < 128f)
                 {
+                    weapon.Value!.Render = Color.FromArgb((int)alpha, pawn.Render);
+                    Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_clrRender");
                     _entities.Add(weapon.Value!);
                 }
             }
@@ -144,17 +154,21 @@ public class Invisible
 
     public static void Cleanup()
     {
+        _entities.Clear();
+
         foreach (var player in Util.GetValidPlayers())
         {
             var pawn = player.PlayerPawn.Value;
 
             pawn!.Render = Color.FromArgb(255, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
+            pawn!.ShadowStrength = 1.0f;
+            Utilities.SetStateChanged(pawn!, "CBaseModelEntity", "m_flShadowStrength");
 
             foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
-                weapon.Value!.Render = pawn!.Render;
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+                weapon.Value!.ShadowStrength = 1.0f;
+                Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
             }
         }
 
