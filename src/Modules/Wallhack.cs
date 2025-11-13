@@ -90,8 +90,71 @@ public class Wallhack
         return HookResult.Continue;
     }
 
+    public static HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
+        if (!Globals.GlowData.TryGetValue(player!, out var glowData)) return HookResult.Continue;
+        if (!glowData.GlowEnt.IsValid) return HookResult.Continue;
+
+        UpdateGlowColor(player!, glowData.GlowEnt);
+
+        return HookResult.Continue;
+    }
+
+    private static Color GetHealthColor(int health)
+    {
+        if (health > 100) health = 100;
+        if (health < 0) health = 0;
+
+        int r, g, b;
+        if (health > 66)
+        {
+            float t = (100f - health) / 34f;
+            r = (int)(255 * t);
+            g = 255;
+            b = 0;
+        }
+        else if (health > 33)
+        {
+            float t = (66f - health) / 33f;
+            r = 255;
+            g = (int)(255 - 90 * t);
+            b = 0;
+        }
+        else
+        {
+            float t = (33f - health) / 33f;
+            r = 255;
+            g = (int)(165 - 165 * t);
+            b = 0;
+        }
+
+        return Color.FromArgb(255, r, g, b);
+    }
+
+    private static void UpdateGlowColor(CCSPlayerController player, CDynamicProp glowEntity)
+    {
+        int health = 100;
+        
+        if (player.PlayerPawn?.Value != null && player.PlayerPawn.IsValid)
+        {
+            health = player.PlayerPawn.Value.Health;
+        }
+
+        glowEntity.Glow.GlowColorOverride = GetHealthColor(health);
+        glowEntity.DispatchSpawn();
+    }
+
     private static void Glow(CCSPlayerController player)
     {
+        int health = 100;
+        
+        if (player.PlayerPawn?.Value != null && player.PlayerPawn.IsValid)
+        {
+            health = player.PlayerPawn.Value.Health;
+        }
+
         var glowEntity = Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic");
         var modelRelay = Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic");
 
@@ -111,7 +174,7 @@ public class Wallhack
 
         glowEntity.Glow.GlowRange = 5000;
         glowEntity.Glow.GlowRangeMin = 0;
-        glowEntity.Glow.GlowColorOverride = Color.FromArgb(255, Globals.Config.R, Globals.Config.G, Globals.Config.B);
+        glowEntity.Glow.GlowColorOverride = GetHealthColor(health);
         glowEntity.Glow.GlowTeam = -1;
         glowEntity.Glow.GlowType = 3;
 
@@ -131,6 +194,7 @@ public class Wallhack
         Globals.Plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         Globals.Plugin.RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn, HookMode.Post);
         Globals.Plugin.RegisterEventHandler<EventPlayerTeam>(OnPlayerChangeTeam, HookMode.Post);
+        Globals.Plugin.RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
 
         Globals.Plugin.AddCommand("css_wh", "Gives a player walls", CommandWallhack.OnWallhackCommand);
         Globals.Plugin.AddCommand("css_wallhack", "Gives a player walls", CommandWallhack.OnWallhackCommand);
