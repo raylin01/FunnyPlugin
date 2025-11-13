@@ -37,8 +37,8 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         AddCommand("css_debug", "Debug command", CommandDebug.OnDebugCommand);
         #endif
 
-        Invisible.Setup();
         Wallhack.Setup();
+        Invisible.Setup();
     }
 
     public override void Unload(bool hotReload)
