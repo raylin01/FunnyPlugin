@@ -64,11 +64,18 @@ public class Wallhack
     {
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.GlowData.TryGetValue(player!, out var glowData)) return HookResult.Continue;
-        if (!glowData.GlowEnt.IsValid) return HookResult.Continue;
+        
+        // Find player in GlowData by UserId to handle reference changes
+        var glowEntry = Globals.GlowData.FirstOrDefault(kvp => 
+            kvp.Key != null && 
+            kvp.Key.IsValid && 
+            kvp.Key.UserId == player!.UserId);
+        
+        if (glowEntry.Key == null) return HookResult.Continue;
+        if (!glowEntry.Value.GlowEnt.IsValid) return HookResult.Continue;
 
-        glowData.GlowEnt.Glow.GlowRange = 0;
-        glowData.GlowEnt.DispatchSpawn();
+        glowEntry.Value.GlowEnt.Glow.GlowRange = 0;
+        glowEntry.Value.GlowEnt.DispatchSpawn();
 
         return HookResult.Continue;
     }
@@ -77,14 +84,21 @@ public class Wallhack
     {
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.GlowData.TryGetValue(player!, out var glowData)) return HookResult.Continue;
-        if (!glowData.GlowEnt.IsValid) return HookResult.Continue;
-        if (!glowData.ModelRelay.IsValid) return HookResult.Continue;
+        
+        // Find player in GlowData by UserId to handle reference changes
+        var glowEntry = Globals.GlowData.FirstOrDefault(kvp => 
+            kvp.Key != null && 
+            kvp.Key.IsValid && 
+            kvp.Key.UserId == player!.UserId);
+        
+        if (glowEntry.Key == null) return HookResult.Continue;
+        if (!glowEntry.Value.GlowEnt.IsValid) return HookResult.Continue;
+        if (!glowEntry.Value.ModelRelay.IsValid) return HookResult.Continue;
 
         Server.NextWorldUpdate(() => 
         {
-            glowData.GlowEnt.SetModel(Util.GetPlayerModel(player));
-            glowData.ModelRelay.SetModel(Util.GetPlayerModel(player));
+            glowEntry.Value.GlowEnt.SetModel(Util.GetPlayerModel(player));
+            glowEntry.Value.ModelRelay.SetModel(Util.GetPlayerModel(player));
         });
 
         return HookResult.Continue;
@@ -94,10 +108,17 @@ public class Wallhack
     {
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        if (!Globals.GlowData.TryGetValue(player!, out var glowData)) return HookResult.Continue;
-        if (!glowData.GlowEnt.IsValid) return HookResult.Continue;
+        
+        // Find player in GlowData by checking all entries since player reference might change
+        var glowEntry = Globals.GlowData.FirstOrDefault(kvp => 
+            kvp.Key != null && 
+            kvp.Key.IsValid && 
+            kvp.Key.UserId == player!.UserId);
+        
+        if (glowEntry.Key == null) return HookResult.Continue;
+        if (!glowEntry.Value.GlowEnt.IsValid) return HookResult.Continue;
 
-        UpdateGlowColor(player!, glowData.GlowEnt);
+        UpdateGlowColor(player!, glowEntry.Value.GlowEnt);
 
         return HookResult.Continue;
     }
@@ -142,8 +163,11 @@ public class Wallhack
             health = player.PlayerPawn.Value.Health;
         }
 
-        glowEntity.Glow.GlowColorOverride = GetHealthColor(health);
-        glowEntity.DispatchSpawn();
+        var color = GetHealthColor(health);
+        glowEntity.Glow.GlowColorOverride = color;
+        glowEntity.Glow.GlowRange = 5000;
+        glowEntity.Glow.GlowRangeMin = 0;
+        Utilities.SetStateChanged(glowEntity, "CGlowProperty", "m_glowColorOverride");
     }
 
     private static void Glow(CCSPlayerController player)
