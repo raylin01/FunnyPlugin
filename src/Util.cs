@@ -22,17 +22,9 @@ public static class Util
                plr.Connected == PlayerConnectedState.PlayerConnected &&
                !plr.IsHLTV;
 
-    public static List<CCSPlayerController> GetValidPlayers()
-    {
-        List<CCSPlayerController> validPlayers = [];
-        foreach (var plr in Utilities.GetPlayers())
-        {
-            if (IsPlayerValid(plr))
-                validPlayers.Add(plr);
-        }
-
-        return validPlayers;
-    }
+    public static List<CCSPlayerController> GetValidPlayers() => [.. Utilities.GetPlayers().Where(IsPlayerValid)];
+    public static List<CCSPlayerController> GetBots() => [.. GetValidPlayers().Where(plr => plr.IsBot)];
+    public static List<CCSPlayerController> GetRealPlayers() => [.. GetValidPlayers().Where(plr => !plr.IsBot)];
 
     public static float Map(float value, float fromMin, float fromMax, float toMin, float toMax)
     {

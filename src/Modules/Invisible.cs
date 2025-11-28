@@ -69,11 +69,12 @@ public class Invisible
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
 
             pawn.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
+            Utilities.SetStateChanged(pawn!, "CBaseModelEntity", "m_flShadowStrength");
 
             foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
                 weapon.Value!.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
-                Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
+                Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_flShadowStrength");
 
                 if (alpha < 128f)
                 {
@@ -168,7 +169,7 @@ public class Invisible
             foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
                 weapon.Value!.ShadowStrength = 1.0f;
-                Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
+                Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_flShadowStrength");
             }
         }
 
