@@ -171,9 +171,6 @@ public class Invisible
         var attacker = @event.Attacker;
         var victim = @event.Userid;
 
-        if (Util.IsPlayerValid(victim) && Globals.InvisiblePlayers.ContainsKey(victim!))
-            RestoreInvisibleVictimHealth(victim!, @event.DmgHealth);
-
         if (!Util.IsPlayerValid(attacker) || !Util.IsPlayerValid(victim)) return HookResult.Continue;
         if (attacker == victim) return HookResult.Continue;
         if (!Globals.InvisiblePlayers.ContainsKey(victim!)) return HookResult.Continue;
@@ -364,22 +361,6 @@ public class Invisible
         if (IsPistolWeapon(weaponName) || IsSmgWeapon(weaponName) || IsRifleOrLmgWeapon(weaponName)) return 2;
 
         return 0;
-    }
-
-    private static void RestoreInvisibleVictimHealth(CCSPlayerController victim, int damage)
-    {
-        if (damage <= 0) return;
-        if (!Util.IsPlayerValid(victim)) return;
-        if (!Globals.InvisiblePlayers.ContainsKey(victim)) return;
-
-        var pawn = victim.PlayerPawn!.Value;
-        if (pawn == null || !pawn.IsValid) return;
-
-        var restoredHealth = Math.Min(100, pawn.Health + damage);
-        if (restoredHealth == pawn.Health) return;
-
-        pawn.Health = restoredHealth;
-        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 
     private static void SetPlayerInvisibleFor(CCSPlayerController player, float time)
