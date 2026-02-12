@@ -17,8 +17,8 @@ public class CommandWallhack
             if (Util.IsPlayerValid(caller))
                 Util.ServerPrintToChat(caller!, $"Toggled wallhacks on {command.ArgString}");
 
-            if (!Globals.Wallhackers.Remove(player))
-                Globals.Wallhackers.Add(player);
+            if (!Globals.Wallhackers.Remove(player.Slot))
+                Globals.Wallhackers.Add(player.Slot);
         }
         else
         {

@@ -56,6 +56,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
 
     public void OnTick()
     {
+        Wallhack.OnTick();
         Invisible.OnTick();
     }
 

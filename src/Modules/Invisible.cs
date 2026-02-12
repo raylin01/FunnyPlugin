@@ -9,11 +9,20 @@ namespace Funnies.Modules;
 
 public class Invisible
 {
+    private const float MissResolveDelay = 0.046875f;
+    private const float GrenadeResolveDelay = 5.0f;
+
+    private sealed class PendingMissAttempt
+    {
+        public int Id { get; init; }
+        public int Damage { get; init; }
+        public bool Resolved { get; set; }
+    }
 
     private static List<CEntityInstance> _entities = [];
-    private static Dictionary<CCSPlayerController, int> _pendingShots = new();
-    private static Dictionary<CCSPlayerController, int> _hitCredits = new();
-    private static Dictionary<CCSPlayerController, string> _thrownGrenades = new();
+    private static int _nextAttemptId = 1;
+    private static Dictionary<int, List<PendingMissAttempt>> _pendingShots = [];
+    private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
@@ -33,7 +42,7 @@ public class Invisible
         if (c4s.Any())
         {
             var c4 = c4s.First();
-            if (player!.Team != CsTeam.Terrorist && !gameRules.GameRules!.BombPlanted && !c4.IsPlantingViaUse  && !gameRules.GameRules!.BombDropped)
+            if (player.Team != CsTeam.Terrorist && !gameRules.GameRules.BombPlanted && !c4.IsPlantingViaUse && !gameRules.GameRules.BombDropped)
                 info.TransmitEntities.Remove(c4);
             else
                 info.TransmitEntities.Add(c4);
@@ -43,11 +52,11 @@ public class Invisible
     public static void OnTick()
     {
         _entities.Clear();
-        
+
         foreach (var invis in Globals.InvisiblePlayers)
         {
             if (!Util.IsPlayerValid(invis.Key)) continue;
-            
+
             var alpha = 255f;
 
             var half = Server.CurrentTime + ((invis.Value.StartTime - Server.CurrentTime) / 2);
@@ -60,11 +69,13 @@ public class Invisible
             if (alpha == 0)
             {
                 pawn!.EntitySpottedState.Spotted = false;
-                pawn!.EntitySpottedState.SpottedByMask[0] = 0;
+                pawn.EntitySpottedState.SpottedByMask[0] = 0;
                 _entities.Add(pawn);
             }
             else
+            {
                 _entities.Remove(pawn);
+            }
 
             invis.Key.PrintToCenterHtml(string.Concat(Enumerable.Repeat("&#9608;", progress)) + string.Concat(Enumerable.Repeat("&#9617;", 20 - progress)));
 
@@ -77,13 +88,13 @@ public class Invisible
             foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
                 weapon.Value!.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
-                Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_flShadowStrength");
+                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
 
                 if (alpha < 128f)
                 {
-                    weapon.Value!.Render = Color.FromArgb((int)alpha, pawn.Render);
-                    Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_clrRender");
-                    _entities.Add(weapon.Value!);
+                    weapon.Value.Render = Color.FromArgb((int)alpha, pawn.Render);
+                    Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+                    _entities.Add(weapon.Value);
                 }
             }
         }
@@ -99,122 +110,37 @@ public class Invisible
     public static HookResult OnPlayerShoot(EventBulletImpact @event, GameEventInfo info)
     {
         SetPlayerInvisibleFor(@event.Userid, 0.5f);
-        HandleMissedShotDamage(@event);
 
         return HookResult.Continue;
     }
 
-    private static void HandleMissedShotDamage(EventBulletImpact @event)
+    public static HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo info)
     {
-        var shooter = @event.Userid;
-        if (!Util.IsPlayerValid(shooter)) return;
-        
-        // Only apply damage if there's at least one invisible player
-        if (Globals.InvisiblePlayers.Count == 0) return;
-        
-        // Don't damage invisible players
-        if (Globals.InvisiblePlayers.ContainsKey(shooter)) return;
-        
-        // Increment pending shot counter
-        if (!_pendingShots.ContainsKey(shooter))
-            _pendingShots[shooter] = 0;
-        _pendingShots[shooter]++;
-        
-        // Schedule damage check after 3 ticks (3/64 seconds) to let OnPlayerHurt fire if it's a hit
-        Globals.Plugin.AddTimer(0.046875f, () =>
-        {
-            if (!Util.IsPlayerValid(shooter)) return;
-            if (!_pendingShots.ContainsKey(shooter)) return;
-            
-            // Decrement pending shot counter
-            _pendingShots[shooter]--;
-            
-            // Check if we have hit credits available
-            var hasCredit = _hitCredits.TryGetValue(shooter, out var credits) && credits > 0;
-            
-            if (hasCredit)
-            {
-                // This was a hit - consume one credit
-                _hitCredits[shooter]--;
-                if (_hitCredits[shooter] <= 0)
-                    _hitCredits.Remove(shooter);
-            }
-            else
-            {
-                // This is a miss - apply damage
-                var shooterPawn = shooter.PlayerPawn.Value;
-                if (shooterPawn == null || !shooterPawn.IsValid) return;
-                
-                var activeWeapon = shooterPawn.WeaponServices?.ActiveWeapon?.Value;
-                if (activeWeapon == null) return;
-                
-                var weaponName = activeWeapon.DesignerName.ToLower();
-                var damage = GetMissedShotDamage(weaponName);
-                
-                if (damage > 0)
-                {
-                    var currentHealth = shooterPawn.Health;
-                    var newHealth = currentHealth - damage;
-                    
-                    if (newHealth <= 0)
-                    {
-                        // Kill the player
-                        shooterPawn.CommitSuicide(false, true);
-                    }
-                    else
-                    {
-                        shooterPawn.Health = newHealth;
-                        Utilities.SetStateChanged(shooterPawn, "CBaseEntity", "m_iHealth");
-                    }
-                }
-            }
-            
-            // Clean up if no more pending shots
-            if (_pendingShots[shooter] <= 0)
-                _pendingShots.Remove(shooter);
-        });
+        var player = @event.Userid;
+        if (!ShouldTrackMissDamage(player)) return HookResult.Continue;
+
+        var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
+        if (IsKnifeWeapon(weaponName) || IsGrenadeWeapon(weaponName)) return HookResult.Continue;
+
+        var damage = GetMissedShotDamage(weaponName);
+        if (damage <= 0) return HookResult.Continue;
+
+        QueueMissAttempt(_pendingShots, player!, damage, MissResolveDelay);
+
+        return HookResult.Continue;
     }
 
-    private static int GetMissedShotDamage(string weaponName)
+    public static HookResult OnGrenadeThrown(EventGrenadeThrown @event, GameEventInfo info)
     {
-        // Pistols - 2 HP
-        if (weaponName.Contains("pistol") || weaponName.Contains("deagle") || 
-            weaponName.Contains("elite") || weaponName.Contains("fiveseven") || 
-            weaponName.Contains("glock") || weaponName.Contains("hkp2000") || 
-            weaponName.Contains("p250") || weaponName.Contains("tec9") || 
-            weaponName.Contains("cz75") || weaponName.Contains("revolver"))
-        {
-            return 2;
-        }
-        
-        // Snipers - 5 HP
-        if (weaponName.Contains("awp") || weaponName.Contains("ssg08") || 
-            weaponName.Contains("scar20") || weaponName.Contains("g3sg1"))
-        {
-            return 5;
-        }
-        
-        // Shotguns - 5 HP
-        if (weaponName.Contains("nova") || weaponName.Contains("xm1014") || 
-            weaponName.Contains("mag7") || weaponName.Contains("sawedoff"))
-        {
-            return 5;
-        }
-        
-        // Rifles and SMGs - 3 HP
-        if (weaponName.Contains("ak47") || weaponName.Contains("m4a1") || 
-            weaponName.Contains("m4a4") || weaponName.Contains("famas") || 
-            weaponName.Contains("galilar") || weaponName.Contains("aug") || 
-            weaponName.Contains("sg556") || weaponName.Contains("mp5") || 
-            weaponName.Contains("mp7") || weaponName.Contains("mp9") || 
-            weaponName.Contains("mac10") || weaponName.Contains("p90") || 
-            weaponName.Contains("bizon") || weaponName.Contains("ump45") || 
-            weaponName.Contains("negev") || weaponName.Contains("m249"))
-        {
-            return 3;
-        }
-        
-        return 0;
+        var player = @event.Userid;
+        if (!ShouldTrackMissDamage(player)) return HookResult.Continue;
+
+        var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
+        if (!IsGrenadeWeapon(weaponName)) return HookResult.Continue;
+
+        QueueMissAttempt(_pendingGrenades, player!, 5, GrenadeResolveDelay);
+
+        return HookResult.Continue;
     }
 
     public static HookResult OnPlayerStartPlant(EventBombBeginplant @event, GameEventInfo info)
@@ -241,157 +167,230 @@ public class Invisible
     public static HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
     {
         SetPlayerInvisibleFor(@event.Userid, 0.5f);
-        
-        // Track successful hits for missed shot detection
-        // Only track if attacker hit someone OTHER than themselves
+
         var attacker = @event.Attacker;
         var victim = @event.Userid;
-        if (Util.IsPlayerValid(attacker) && attacker != victim)
+
+        if (Util.IsPlayerValid(victim) && Globals.InvisiblePlayers.ContainsKey(victim!))
+            RestoreInvisibleVictimHealth(victim!, @event.DmgHealth);
+
+        if (!Util.IsPlayerValid(attacker) || !Util.IsPlayerValid(victim)) return HookResult.Continue;
+        if (attacker == victim) return HookResult.Continue;
+        if (!Globals.InvisiblePlayers.ContainsKey(victim!)) return HookResult.Continue;
+        if (Globals.InvisiblePlayers.ContainsKey(attacker!)) return HookResult.Continue;
+
+        var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
+        if (IsGrenadeWeapon(weaponName))
         {
-            // Add a hit credit for this attacker
-            if (!_hitCredits.ContainsKey(attacker))
-                _hitCredits[attacker] = 0;
-            _hitCredits[attacker]++;
-            
-            // If this was from a tracked grenade, clear the grenade tracking
-            if (_thrownGrenades.ContainsKey(attacker))
-            {
-                _thrownGrenades.Remove(attacker);
-            }
+            if (!ResolveOldestAttempt(_pendingGrenades, attacker!))
+                ResolveOldestAttempt(_pendingShots, attacker);
+        }
+        else
+        {
+            if (!ResolveOldestAttempt(_pendingShots, attacker!))
+                ResolveOldestAttempt(_pendingGrenades, attacker);
         }
 
         return HookResult.Continue;
     }
 
-    public static HookResult OnGrenadeThrown(EventGrenadeThrown @event, GameEventInfo info)
+    private static void QueueMissAttempt(Dictionary<int, List<PendingMissAttempt>> pendingBySlot, CCSPlayerController player, int damage, float delay)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        
-        // Only track HE grenades and molotovs/incendiaries
-        var weaponName = @event.Weapon.ToLower();
-        if (!weaponName.Contains("hegrenade") && !weaponName.Contains("molotov") && !weaponName.Contains("incgrenade"))
-            return HookResult.Continue;
-        
-        // Only apply damage if there's at least one invisible player
-        if (Globals.InvisiblePlayers.Count == 0) return HookResult.Continue;
-        
-        // Don't damage invisible players
-        if (Globals.InvisiblePlayers.ContainsKey(player)) return HookResult.Continue;
-        
-        // Track this grenade throw
-        _thrownGrenades[player] = weaponName;
-        
-        // Wait longer for grenades (5 seconds) to see if they damage anyone
-        Globals.Plugin.AddTimer(5.0f, () =>
+        if (damage <= 0) return;
+
+        var slot = player.Slot;
+        if (!pendingBySlot.TryGetValue(slot, out var attempts))
         {
-            if (!Util.IsPlayerValid(player)) return;
-            
-            // Remove from tracking - if it was removed earlier by OnPlayerHurt, that means it hit
-            var wasHit = !_thrownGrenades.ContainsKey(player);
-            if (!wasHit)
-                _thrownGrenades.Remove(player);
-            
-            if (!wasHit)
-            {
-                // Grenade missed - apply 20 HP damage
-                var pawn = player.PlayerPawn.Value;
-                if (pawn == null || !pawn.IsValid) return;
-                
-                var currentHealth = pawn.Health;
-                var newHealth = currentHealth - 20;
-                
-                if (newHealth <= 0)
-                {
-                    pawn.CommitSuicide(false, true);
-                }
-                else
-                {
-                    pawn.Health = newHealth;
-                    Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
-                }
-            }
+            attempts = [];
+            pendingBySlot[slot] = attempts;
+        }
+
+        var attempt = new PendingMissAttempt
+        {
+            Id = _nextAttemptId++,
+            Damage = damage
+        };
+
+        attempts.Add(attempt);
+
+        Globals.Plugin.AddTimer(delay, () =>
+        {
+            if (!pendingBySlot.TryGetValue(slot, out var activeAttempts)) return;
+
+            var currentAttempt = activeAttempts.FirstOrDefault(item => item.Id == attempt.Id);
+            if (currentAttempt == null) return;
+
+            if (!currentAttempt.Resolved)
+                ApplyMissPenalty(slot, currentAttempt.Damage);
+
+            activeAttempts.Remove(currentAttempt);
+            if (activeAttempts.Count == 0)
+                pendingBySlot.Remove(slot);
         });
-        
-        return HookResult.Continue;
     }
 
-    public static HookResult OnPlayerSwingKnife(EventWeaponFire @event, GameEventInfo info)
+    private static bool ResolveOldestAttempt(Dictionary<int, List<PendingMissAttempt>> pendingBySlot, CCSPlayerController player)
     {
-        var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-        
-        // Check if it's a knife swing first
-        var weaponName = @event.Weapon.ToLower();
-        if (!weaponName.Contains("knife") && !weaponName.Contains("bayonet"))
-            return HookResult.Continue;
-        
-        // Only apply damage if there's at least one invisible player
-        if (Globals.InvisiblePlayers.Count == 0) return HookResult.Continue;
-        
-        // Don't damage invisible players
-        if (Globals.InvisiblePlayers.ContainsKey(player)) return HookResult.Continue;
-        
-        // Track this knife swing
-        if (!_pendingShots.ContainsKey(player))
-            _pendingShots[player] = 0;
-        _pendingShots[player]++;
-        
-        // Schedule damage check after 3 ticks (3/64 seconds)
-        Globals.Plugin.AddTimer(0.046875f, () =>
+        if (!pendingBySlot.TryGetValue(player.Slot, out var attempts)) return false;
+
+        var pending = attempts.FirstOrDefault(item => !item.Resolved);
+        if (pending == null) return false;
+
+        pending.Resolved = true;
+        return true;
+    }
+
+    private static void ApplyMissPenalty(int slot, int damage)
+    {
+        if (damage <= 0) return;
+
+        var player = GetPlayerBySlot(slot);
+        if (!Util.IsPlayerValid(player)) return;
+        if (Globals.InvisiblePlayers.ContainsKey(player!)) return;
+
+        var pawn = player.PlayerPawn!.Value;
+        if (pawn == null || !pawn.IsValid) return;
+
+        var newHealth = pawn.Health - damage;
+        if (newHealth <= 0)
         {
-            if (!Util.IsPlayerValid(player)) return;
-            if (!_pendingShots.ContainsKey(player)) return;
-            
-            _pendingShots[player]--;
-            
-            // Check if we have hit credits available
-            var hasCredit = _hitCredits.TryGetValue(player, out var credits) && credits > 0;
-            
-            if (hasCredit)
-            {
-                // This was a hit - consume one credit
-                _hitCredits[player]--;
-                if (_hitCredits[player] <= 0)
-                    _hitCredits.Remove(player);
-            }
-            else
-            {
-                // Knife swing missed - apply 2 HP damage
-                var pawn = player.PlayerPawn.Value;
-                if (pawn == null || !pawn.IsValid) return;
-                
-                var currentHealth = pawn.Health;
-                var newHealth = currentHealth - 2;
-                
-                if (newHealth <= 0)
-                {
-                    pawn.CommitSuicide(false, true);
-                }
-                else
-                {
-                    pawn.Health = newHealth;
-                    Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
-                }
-            }
-            
-            // Clean up if no more pending shots
-            if (_pendingShots[player] <= 0)
-                _pendingShots.Remove(player);
-        });
-        
-        return HookResult.Continue;
+            pawn.CommitSuicide(false, true);
+            return;
+        }
+
+        pawn.Health = newHealth;
+        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
+    }
+
+    private static bool ShouldTrackMissDamage(CCSPlayerController? player)
+    {
+        if (!Util.IsPlayerValid(player)) return false;
+        if (Globals.InvisiblePlayers.ContainsKey(player)) return false;
+
+        return HasInvisibleOpponent(player);
+    }
+
+    private static CCSPlayerController? GetPlayerBySlot(int slot)
+    {
+        return Util.GetValidPlayers().FirstOrDefault(player => player.Slot == slot, null);
+    }
+
+    private static bool HasInvisibleOpponent(CCSPlayerController player)
+    {
+        return Globals.InvisiblePlayers.Keys.Any(invisiblePlayer =>
+            Util.IsPlayerValid(invisiblePlayer) &&
+            invisiblePlayer.Slot != player.Slot &&
+            invisiblePlayer.Team >= CsTeam.Terrorist &&
+            invisiblePlayer.Team != player.Team);
+    }
+
+    private static string NormalizeWeaponName(string weaponName)
+    {
+        var normalized = weaponName.ToLowerInvariant();
+        return normalized.StartsWith("weapon_") ? normalized["weapon_".Length..] : normalized;
+    }
+
+    private static bool IsKnifeWeapon(string weaponName)
+    {
+        return weaponName.Contains("knife") || weaponName.Contains("bayonet");
+    }
+
+    private static bool IsGrenadeWeapon(string weaponName)
+    {
+        return weaponName.Contains("hegrenade") ||
+               weaponName.Contains("molotov") ||
+               weaponName.Contains("incgrenade");
+    }
+
+    private static bool IsShotgunWeapon(string weaponName)
+    {
+        return weaponName.Contains("nova") ||
+               weaponName.Contains("xm1014") ||
+               weaponName.Contains("mag7") ||
+               weaponName.Contains("sawedoff");
+    }
+
+    private static bool IsSniperWeapon(string weaponName)
+    {
+        return weaponName.Contains("awp") ||
+               weaponName.Contains("ssg08") ||
+               weaponName.Contains("scar20") ||
+               weaponName.Contains("g3sg1");
+    }
+
+    private static bool IsSmgWeapon(string weaponName)
+    {
+        return weaponName.Contains("mp5") ||
+               weaponName.Contains("mp7") ||
+               weaponName.Contains("mp9") ||
+               weaponName.Contains("mac10") ||
+               weaponName.Contains("p90") ||
+               weaponName.Contains("bizon") ||
+               weaponName.Contains("ump45");
+    }
+
+    private static bool IsPistolWeapon(string weaponName)
+    {
+        return weaponName.Contains("deagle") ||
+               weaponName.Contains("elite") ||
+               weaponName.Contains("fiveseven") ||
+               weaponName.Contains("glock") ||
+               weaponName.Contains("hkp2000") ||
+               weaponName.Contains("p250") ||
+               weaponName.Contains("tec9") ||
+               weaponName.Contains("cz75") ||
+               weaponName.Contains("revolver") ||
+               weaponName.Contains("usp_silencer");
+    }
+
+    private static bool IsRifleOrLmgWeapon(string weaponName)
+    {
+        return weaponName.Contains("ak47") ||
+               weaponName.Contains("m4a1") ||
+               weaponName.Contains("m4a4") ||
+               weaponName.Contains("m4a1_silencer") ||
+               weaponName.Contains("famas") ||
+               weaponName.Contains("galilar") ||
+               weaponName.Contains("aug") ||
+               weaponName.Contains("sg556") ||
+               weaponName.Contains("negev") ||
+               weaponName.Contains("m249");
+    }
+
+    private static int GetMissedShotDamage(string weaponName)
+    {
+        if (IsSniperWeapon(weaponName)) return 8;
+        if (IsShotgunWeapon(weaponName) || IsGrenadeWeapon(weaponName)) return 5;
+        if (IsPistolWeapon(weaponName) || IsSmgWeapon(weaponName) || IsRifleOrLmgWeapon(weaponName)) return 2;
+
+        return 0;
+    }
+
+    private static void RestoreInvisibleVictimHealth(CCSPlayerController victim, int damage)
+    {
+        if (damage <= 0) return;
+        if (!Util.IsPlayerValid(victim)) return;
+        if (!Globals.InvisiblePlayers.ContainsKey(victim)) return;
+
+        var pawn = victim.PlayerPawn!.Value;
+        if (pawn == null || !pawn.IsValid) return;
+
+        var restoredHealth = Math.Min(100, pawn.Health + damage);
+        if (restoredHealth == pawn.Health) return;
+
+        pawn.Health = restoredHealth;
+        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 
     private static void SetPlayerInvisibleFor(CCSPlayerController player, float time)
     {
         if (!Util.IsPlayerValid(player)) return;
-        if (!Globals.InvisiblePlayers.TryGetValue(player!, out var data)) return;
+        if (!Globals.InvisiblePlayers.TryGetValue(player, out var data)) return;
 
         data.StartTime = Server.CurrentTime;
         data.EndTime = Server.CurrentTime + time;
 
-        Globals.InvisiblePlayers[player!] = data;
+        Globals.InvisiblePlayers[player] = data;
     }
 
     public static void Setup()
@@ -404,7 +403,7 @@ public class Invisible
         Globals.Plugin.RegisterEventHandler<EventWeaponReload>(OnPlayerReload);
         Globals.Plugin.RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
         Globals.Plugin.RegisterEventHandler<EventGrenadeThrown>(OnGrenadeThrown);
-        Globals.Plugin.RegisterEventHandler<EventWeaponFire>(OnPlayerSwingKnife);
+        Globals.Plugin.RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
 
         Globals.Plugin.AddCommand("css_invisible", "Makes a player invisible", CommandInvisible.OnInvisibleCommand);
         Globals.Plugin.AddCommand("css_invis", "Makes a player invisible", CommandInvisible.OnInvisibleCommand);
@@ -414,8 +413,8 @@ public class Invisible
     {
         _entities.Clear();
         _pendingShots.Clear();
-        _hitCredits.Clear();
-        _thrownGrenades.Clear();
+        _pendingGrenades.Clear();
+        _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())
         {
@@ -423,13 +422,13 @@ public class Invisible
 
             pawn!.Render = Color.FromArgb(255, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
-            pawn!.ShadowStrength = 1.0f;
-            Utilities.SetStateChanged(pawn!, "CBaseModelEntity", "m_flShadowStrength");
+            pawn.ShadowStrength = 1.0f;
+            Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
 
             foreach (var weapon in pawn.WeaponServices!.MyWeapons)
             {
                 weapon.Value!.ShadowStrength = 1.0f;
-                Utilities.SetStateChanged(weapon.Value!, "CBaseModelEntity", "m_flShadowStrength");
+                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
             }
         }
 
