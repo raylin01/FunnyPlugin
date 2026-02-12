@@ -139,33 +139,36 @@ public class Wallhack
 
     private static Color GetHealthColor(int health)
     {
-        if (health > 100) health = 100;
-        if (health < 0) health = 0;
+        health = Math.Clamp(health, 0, 100);
 
-        int r, g, b;
-        if (health > 66)
+        if (health >= 70)
         {
-            float t = (100f - health) / 34f;
-            r = (int)(255 * t);
-            g = 255;
-            b = 0;
-        }
-        else if (health > 33)
-        {
-            float t = (66f - health) / 33f;
-            r = 255;
-            g = (int)(255 - 90 * t);
-            b = 0;
-        }
-        else
-        {
-            float t = (33f - health) / 33f;
-            r = 255;
-            g = (int)(165 - 165 * t);
-            b = 0;
+            // 100 -> 70: Green to Yellow.
+            var t = (100f - health) / 30f;
+            var r = (int)(255 * t);
+            return Color.FromArgb(255, r, 255, 0);
         }
 
-        return Color.FromArgb(255, r, g, b);
+        if (health >= 40)
+        {
+            // 70 -> 40: Yellow to Orange.
+            var t = (70f - health) / 30f;
+            var g = (int)(255 - (90 * t)); // 255 -> 165
+            return Color.FromArgb(255, 255, g, 0);
+        }
+
+        if (health >= 10)
+        {
+            // 40 -> 10: Orange to Red.
+            var t = (40f - health) / 30f;
+            var g = (int)(165 * (1f - t)); // 165 -> 0
+            return Color.FromArgb(255, 255, g, 0);
+        }
+
+        // 10 -> 0: Red to dark red.
+        var darkT = (10f - health) / 10f;
+        var darkR = (int)(255 - (135 * darkT)); // 255 -> 120
+        return Color.FromArgb(255, darkR, 0, 0);
     }
 
     private static void UpdateGlowColor(CCSPlayerController player, CDynamicProp glowEntity)
