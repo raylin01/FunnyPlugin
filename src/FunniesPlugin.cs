@@ -12,6 +12,14 @@ public class FunniesConfig : BasePluginConfig
     [JsonPropertyName("ColorB")] public byte B { get; set; } = 209;
     [JsonPropertyName("CommandPermission")] public string AdminPermission { get; set; } = "@css/generic";
     [JsonPropertyName("RconPermission")] public string RconPermission { get; set; } = "@css/rcon";
+    [JsonPropertyName("SpecialPlayerRoundMoneyEnabled")] public bool SpecialPlayerRoundMoneyEnabled { get; set; } = true;
+    [JsonPropertyName("SpecialPlayerRoundMoneyAmount")] public int SpecialPlayerRoundMoneyAmount { get; set; } = 999999;
+    [JsonPropertyName("SpecialPlayerMoneyRoundStartFirstHalf")] public int SpecialPlayerMoneyRoundStartFirstHalf { get; set; } = 2;
+    [JsonPropertyName("SpecialPlayerMoneyRoundEndFirstHalf")] public int SpecialPlayerMoneyRoundEndFirstHalf { get; set; } = 12;
+    [JsonPropertyName("SpecialPlayerMoneyRoundStartSecondHalf")] public int SpecialPlayerMoneyRoundStartSecondHalf { get; set; } = 14;
+    [JsonPropertyName("SpecialPlayerMoneyRoundEndSecondHalf")] public int SpecialPlayerMoneyRoundEndSecondHalf { get; set; } = 24;
+    [JsonPropertyName("LimitNonSpecialGrenadeBuys")] public bool LimitNonSpecialGrenadeBuys { get; set; } = true;
+    [JsonPropertyName("NonSpecialGrenadeBuyLimit")] public int NonSpecialGrenadeBuyLimit { get; set; } = 2;
 }
  
 public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
@@ -39,6 +47,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
 
         Wallhack.Setup();
         Invisible.Setup();
+        Economy.Setup();
     }
 
     public override void Unload(bool hotReload)
@@ -46,6 +55,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         #if DEBUG
         if (hotReload)
         {
+            Economy.Cleanup();
             Invisible.Cleanup();
             Wallhack.Cleanup();
         }

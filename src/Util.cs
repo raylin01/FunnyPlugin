@@ -37,6 +37,11 @@ public static class Util
         return GetValidPlayers().FirstOrDefault(x => x!.PlayerName == name, null);
     }
 
+    public static bool IsSpecialPlayer(CCSPlayerController player)
+    {
+        return Globals.Wallhackers.Contains(player.Slot) || Globals.InvisiblePlayers.ContainsKey(player);
+    }
+
     public static void ServerPrintToChat(CCSPlayerController player, string message)
     {
         player.PrintToChat($" {ChatColors.Green}[SERVER]{ChatColors.White} {message}");
