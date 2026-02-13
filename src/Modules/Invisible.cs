@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Reflection;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Memory;
@@ -16,6 +17,8 @@ public class Invisible
     private const float KnifeFireDedupeWindow = 0.08f;
     private const float KnifeAttack2DedupeWindow = 0.2f;
     private const float KnifeAttack2MergeWindow = 0.7f;
+    private const float KnifeHitResolveWindow = 1.6f;
+    private const float WeaponSkinSweepInterval = 0.2f;
 
     private enum AttemptKind
     {
@@ -42,6 +45,8 @@ public class Invisible
     private static Dictionary<int, float> _lastKnifeAttack2AttemptBySlot = [];
     private static Dictionary<int, float> _lastKnifeHitBySlot = [];
     private static bool _wasSkinSuppressionEnabled;
+    private static float _lastWeaponSkinSweepAt;
+    private static bool _loggedWeaponSkinReflectionWarning;
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
@@ -76,6 +81,7 @@ public class Invisible
         if (Globals.Config.DisableSkinsServerWide)
         {
             SuppressCosmeticsServerWide();
+            SuppressWeaponSkinsServerWide();
             _wasSkinSuppressionEnabled = true;
         }
         else if (_wasSkinSuppressionEnabled)
@@ -83,6 +89,8 @@ public class Invisible
             RestoreCosmeticsServerWide();
             _suppressedCosmeticEntities.Clear();
             _wasSkinSuppressionEnabled = false;
+            _lastWeaponSkinSweepAt = 0.0f;
+            _loggedWeaponSkinReflectionWarning = false;
         }
 
         _entities.Clear();
@@ -262,7 +270,11 @@ public class Invisible
 
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (IsKnifeWeapon(weaponName))
+        {
             _lastKnifeHitBySlot[attacker.Slot] = Server.CurrentTime;
+            ResolvePendingKnifeAttempts(attacker.Slot);
+            return HookResult.Continue;
+        }
 
         if (IsGrenadeWeapon(weaponName))
         {
@@ -276,6 +288,20 @@ public class Invisible
         }
 
         return HookResult.Continue;
+    }
+
+    private static void ResolvePendingKnifeAttempts(int slot)
+    {
+        if (!_pendingShots.TryGetValue(slot, out var attempts)) return;
+
+        var now = Server.CurrentTime;
+        foreach (var attempt in attempts)
+        {
+            if (attempt.Resolved || attempt.Kind != AttemptKind.Knife) continue;
+            if (now - attempt.CreatedAt > KnifeHitResolveWindow) continue;
+
+            attempt.Resolved = true;
+        }
     }
 
     private static void QueueMissAttempt(Dictionary<int, List<PendingMissAttempt>> pendingBySlot, CCSPlayerController player, int damage, float delay, AttemptKind kind)
@@ -468,6 +494,146 @@ public class Invisible
         }
     }
 
+    private static void SuppressWeaponSkinsServerWide()
+    {
+        if (Server.CurrentTime - _lastWeaponSkinSweepAt < WeaponSkinSweepInterval) return;
+        _lastWeaponSkinSweepAt = Server.CurrentTime;
+
+        var totalWeapons = 0;
+        var updatedWeapons = 0;
+        foreach (var player in Util.GetValidPlayers())
+        {
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
+
+            foreach (var weapon in GetWeaponEntities(pawn))
+            {
+                totalWeapons++;
+                if (SuppressWeaponSkin(weapon))
+                    updatedWeapons++;
+            }
+        }
+
+        if (updatedWeapons > 0)
+        {
+            _loggedWeaponSkinReflectionWarning = false;
+            return;
+        }
+
+        if (totalWeapons > 0 && !_loggedWeaponSkinReflectionWarning)
+        {
+            _loggedWeaponSkinReflectionWarning = true;
+            Console.WriteLine("[Funnies] Weapon skin suppression found no writable fallback fields on weapon entities. API snapshot may not expose paintkit fields.");
+        }
+    }
+
+    private static bool SuppressWeaponSkin(CBaseEntity weapon)
+    {
+        // Try common skin fields on both weapon entity and econ item wrappers.
+        var changed = false;
+        changed |= TrySetPathValue(weapon, "FallbackPaintKit", 0);
+        changed |= TrySetPathValue(weapon, "FallbackSeed", 0);
+        changed |= TrySetPathValue(weapon, "FallbackWear", 0.0f);
+        changed |= TrySetPathValue(weapon, "FallbackStatTrak", -1);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackPaintKit", 0);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackSeed", 0);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackWear", 0.0f);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackStatTrak", -1);
+
+        if (!changed) return false;
+
+        TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_nFallbackPaintKit");
+        TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_nFallbackSeed");
+        TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_flFallbackWear");
+        TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_nFallbackStatTrak");
+        TrySetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
+        TrySetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
+        TrySetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
+        TrySetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+        return true;
+    }
+
+    private static bool TrySetPathValue(object root, string path, object value)
+    {
+        var current = root;
+        var segments = path.Split('.');
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            var type = current.GetType();
+            var property = type.GetProperty(segment, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
+            if (property == null) return false;
+
+            if (i == segments.Length - 1)
+            {
+                if (!property.CanWrite) return false;
+                var converted = ConvertForPropertyType(value, property.PropertyType);
+                if (converted == null && property.PropertyType.IsValueType) return false;
+
+                property.SetValue(current, converted);
+                return true;
+            }
+
+            var next = property.GetValue(current);
+            if (next == null) return false;
+            current = next;
+        }
+
+        return false;
+    }
+
+    private static object? ConvertForPropertyType(object value, Type propertyType)
+    {
+        var target = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+        try
+        {
+            if (target.IsEnum)
+                return Enum.ToObject(target, value);
+
+            if (target == typeof(float))
+                return Convert.ToSingle(value);
+            if (target == typeof(double))
+                return Convert.ToDouble(value);
+            if (target == typeof(int))
+                return Convert.ToInt32(value);
+            if (target == typeof(uint))
+                return Convert.ToUInt32(value);
+            if (target == typeof(short))
+                return Convert.ToInt16(value);
+            if (target == typeof(ushort))
+                return Convert.ToUInt16(value);
+            if (target == typeof(byte))
+                return Convert.ToByte(value);
+            if (target == typeof(sbyte))
+                return Convert.ToSByte(value);
+            if (target == typeof(long))
+                return Convert.ToInt64(value);
+            if (target == typeof(ulong))
+                return Convert.ToUInt64(value);
+            if (target == typeof(bool))
+                return Convert.ToBoolean(value);
+
+            return Convert.ChangeType(value, target);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TrySetStateChanged(CBaseEntity entity, string table, string field)
+    {
+        try
+        {
+            Utilities.SetStateChanged(entity, table, field);
+        }
+        catch
+        {
+            // Property table/field availability differs across API snapshots.
+        }
+    }
+
     private static void RestoreCosmeticsServerWide()
     {
         foreach (var player in Util.GetValidPlayers())
@@ -641,6 +807,8 @@ public class Invisible
         _lastKnifeAttack2AttemptBySlot.Clear();
         _lastKnifeHitBySlot.Clear();
         _wasSkinSuppressionEnabled = false;
+        _lastWeaponSkinSweepAt = 0.0f;
+        _loggedWeaponSkinReflectionWarning = false;
         _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())

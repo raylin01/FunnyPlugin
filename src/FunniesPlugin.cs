@@ -47,7 +47,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         AddCommand("css_stop", "Returns match to warmup", CommandMatch.OnStopCommand);
         AddCommand("css_rr", "Restarts the round", CommandMatch.OnRestartRoundCommand);
         AddCommand("css_map", "Changes map", CommandMatch.OnMapCommand);
-        AddCommand("css_skins", "Configures server-wide skin suppression", CommandVisuals.OnSkinsCommand);
+        AddCommand("css_skins", "Configures server-wide weapon skin suppression", CommandVisuals.OnSkinsCommand);
 
         #if DEBUG
         AddCommand("css_debug", "Debug command", CommandDebug.OnDebugCommand);

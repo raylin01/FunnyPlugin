@@ -13,7 +13,7 @@ public static class CommandVisuals
         var args = SplitArguments(command.ArgString);
         if (args.Count == 0 || args[0].Equals("show", StringComparison.OrdinalIgnoreCase))
         {
-            Reply(caller, $"Server-wide skin suppression: {Globals.Config.DisableSkinsServerWide}");
+            Reply(caller, $"Server-wide weapon skin suppression: {Globals.Config.DisableSkinsServerWide}");
             return;
         }
 
@@ -26,7 +26,7 @@ public static class CommandVisuals
             }
 
             Globals.Config.DisableSkinsServerWide = enabled;
-            Reply(caller, $"Server-wide skin suppression set to: {enabled}");
+            Reply(caller, $"Server-wide weapon skin suppression set to: {enabled}");
             PersistConfigReply(caller);
             return;
         }

@@ -32,7 +32,8 @@ Note: Make sure you have the `@css/generic` permission otherwise you wont be abl
 13. `!nadelimit show` shows current grenade-buy-limit settings.
 14. `!nadelimit enabled <0|1>` toggles non-special grenade limit.
 15. `!nadelimit limit <count>` sets the max grenade buys per round for non-special players.
-16. `!skins show` or `!skins enabled <0|1>` toggles server-wide cosmetic attachment suppression (gloves/wearable-style attachments).
+16. `!skins show` displays current server-wide weapon-skin suppression state.
+17. `!skins enabled <0|1>` toggles server-wide weapon-skin suppression.
 
 Note: `!specialmoney` and `!nadelimit` also persist to the plugin JSON config file.
 
