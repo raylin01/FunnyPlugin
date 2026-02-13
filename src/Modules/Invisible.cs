@@ -30,6 +30,7 @@ public class Invisible
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
     private static Dictionary<int, float> _lastKnifeFireAttemptBySlot = [];
     private static Dictionary<int, float> _lastKnifeAttack2AttemptBySlot = [];
+    private static bool _wasSkinSuppressionEnabled;
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
@@ -58,6 +59,17 @@ public class Invisible
 
     public static void OnTick()
     {
+        if (Globals.Config.DisableSkinsServerWide)
+        {
+            SuppressCosmeticsServerWide();
+            _wasSkinSuppressionEnabled = true;
+        }
+        else if (_wasSkinSuppressionEnabled)
+        {
+            RestoreCosmeticsServerWide();
+            _wasSkinSuppressionEnabled = false;
+        }
+
         _entities.Clear();
 
         foreach (var invis in Globals.InvisiblePlayers)
@@ -404,6 +416,65 @@ public class Invisible
             _entities.Add(entity);
     }
 
+    private static IEnumerable<CBaseEntity> GetWeaponEntities(CCSPlayerPawn pawn)
+    {
+        foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid) continue;
+
+            yield return weapon;
+        }
+    }
+
+    private static void SuppressCosmeticsServerWide()
+    {
+        foreach (var player in Util.GetValidPlayers())
+        {
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
+
+            foreach (var attachedEntity in GetAttachedModelEntities(pawn))
+            {
+                SetAttachedShadowStrength(attachedEntity, 0.0f);
+                SetAttachedRenderAlpha(attachedEntity, 0);
+            }
+
+            foreach (var weapon in GetWeaponEntities(pawn))
+            {
+                foreach (var attachedEntity in GetAttachedModelEntities(weapon))
+                {
+                    SetAttachedShadowStrength(attachedEntity, 0.0f);
+                    SetAttachedRenderAlpha(attachedEntity, 0);
+                }
+            }
+        }
+    }
+
+    private static void RestoreCosmeticsServerWide()
+    {
+        foreach (var player in Util.GetValidPlayers())
+        {
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
+
+            foreach (var attachedEntity in GetAttachedModelEntities(pawn))
+            {
+                SetAttachedShadowStrength(attachedEntity, 1.0f);
+                SetAttachedRenderAlpha(attachedEntity, 255);
+            }
+
+            foreach (var weapon in GetWeaponEntities(pawn))
+            {
+                foreach (var attachedEntity in GetAttachedModelEntities(weapon))
+                {
+                    SetAttachedShadowStrength(attachedEntity, 1.0f);
+                    SetAttachedRenderAlpha(attachedEntity, 255);
+                }
+            }
+        }
+    }
+
     private static bool ShouldTrackMissDamage(CCSPlayerController? player)
     {
         if (!Util.IsPlayerValid(player)) return false;
@@ -544,6 +615,7 @@ public class Invisible
         _pendingGrenades.Clear();
         _lastKnifeFireAttemptBySlot.Clear();
         _lastKnifeAttack2AttemptBySlot.Clear();
+        _wasSkinSuppressionEnabled = false;
         _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())

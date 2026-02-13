@@ -20,6 +20,7 @@ public class FunniesConfig : BasePluginConfig
     [JsonPropertyName("SpecialPlayerMoneyRoundEndSecondHalf")] public int SpecialPlayerMoneyRoundEndSecondHalf { get; set; } = 24;
     [JsonPropertyName("LimitNonSpecialGrenadeBuys")] public bool LimitNonSpecialGrenadeBuys { get; set; } = true;
     [JsonPropertyName("NonSpecialGrenadeBuyLimit")] public int NonSpecialGrenadeBuyLimit { get; set; } = 2;
+    [JsonPropertyName("DisableSkinsServerWide")] public bool DisableSkinsServerWide { get; set; } = false;
 }
  
 public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
@@ -46,6 +47,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         AddCommand("css_stop", "Returns match to warmup", CommandMatch.OnStopCommand);
         AddCommand("css_rr", "Restarts the round", CommandMatch.OnRestartRoundCommand);
         AddCommand("css_map", "Changes map", CommandMatch.OnMapCommand);
+        AddCommand("css_skins", "Configures server-wide skin suppression", CommandVisuals.OnSkinsCommand);
 
         #if DEBUG
         AddCommand("css_debug", "Debug command", CommandDebug.OnDebugCommand);
