@@ -49,18 +49,20 @@ public static class Util
 
     public static List<CGameSceneNode> GetChildrenRecursive(CGameSceneNode gameSceneNode)
     {
-        List<CGameSceneNode> children = [];
-        var currentChild = gameSceneNode.Child;
-        while (true)
-        {
-            if (currentChild == null) break;
-            children.Add(currentChild);
-            currentChild = currentChild.NextSibling;
-        }
+        var children = new List<CGameSceneNode>();
+        var stack = new Stack<CGameSceneNode>();
 
-        foreach (var child in children)
+        for (var child = gameSceneNode.Child; child != null; child = child.NextSibling)
+            stack.Push(child);
+
+        // Traverse without mutating the collection being iterated.
+        while (stack.Count > 0)
         {
-            children.AddRange(GetChildrenRecursive(child));
+            var node = stack.Pop();
+            children.Add(node);
+
+            for (var child = node.Child; child != null; child = child.NextSibling)
+                stack.Push(child);
         }
 
         return children;

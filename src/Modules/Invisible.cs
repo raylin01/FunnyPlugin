@@ -13,7 +13,9 @@ public class Invisible
     private const float GrenadeResolveDelay = 5.0f;
     private const float KnifePrimaryResolveDelay = 0.12f;
     private const float KnifeSecondaryResolveDelay = 0.35f;
-    private const float KnifeAttemptDedupeWindow = 0.08f;
+    private const float KnifeFireDedupeWindow = 0.08f;
+    private const float KnifeAttack2DedupeWindow = 0.2f;
+    private const float KnifeAttack2MergeWindow = 0.7f;
 
     private sealed class PendingMissAttempt
     {
@@ -26,7 +28,8 @@ public class Invisible
     private static int _nextAttemptId = 1;
     private static Dictionary<int, List<PendingMissAttempt>> _pendingShots = [];
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
-    private static Dictionary<int, float> _lastKnifeAttemptBySlot = [];
+    private static Dictionary<int, float> _lastKnifeFireAttemptBySlot = [];
+    private static Dictionary<int, float> _lastKnifeAttack2AttemptBySlot = [];
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
@@ -105,6 +108,17 @@ public class Invisible
                     AddInvisibleTransmitEntity(weapon);
                 else
                     _entities.Remove(weapon);
+
+                foreach (var attachedEntity in GetAttachedModelEntities(weapon))
+                {
+                    SetAttachedShadowStrength(attachedEntity, alpha < 128f ? 1.0f : 0.0f);
+                    SetAttachedRenderAlpha(attachedEntity, (int)alpha);
+
+                    if (alpha == 0)
+                        AddInvisibleTransmitEntity(attachedEntity);
+                    else
+                        _entities.Remove(attachedEntity);
+                }
             }
 
             foreach (var attachedEntity in GetAttachedModelEntities(pawn))
@@ -142,7 +156,12 @@ public class Invisible
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (IsGrenadeWeapon(weaponName)) return HookResult.Continue;
         var isKnife = IsKnifeWeapon(weaponName);
-        if (isKnife && !TryTrackKnifeAttempt(player!.Slot)) return HookResult.Continue;
+        if (isKnife)
+        {
+            var slot = player!.Slot;
+            if (IsRecentKnifeAttack2(slot)) return HookResult.Continue;
+            if (!TryTrackKnifeFire(slot)) return HookResult.Continue;
+        }
 
         var damage = GetMissedShotDamage(weaponName);
         if (damage <= 0) return HookResult.Continue;
@@ -163,7 +182,7 @@ public class Invisible
 
         var weaponName = NormalizeWeaponName(activeWeapon.DesignerName);
         if (!IsKnifeWeapon(weaponName)) return;
-        if (!TryTrackKnifeAttempt(player.Slot)) return;
+        if (!TryTrackKnifeAttack2(player.Slot)) return;
 
         QueueMissAttempt(_pendingShots, player, GetMissedShotDamage(weaponName), KnifeSecondaryResolveDelay);
     }
@@ -275,17 +294,38 @@ public class Invisible
         return true;
     }
 
-    private static bool TryTrackKnifeAttempt(int slot)
+    private static bool TryTrackKnifeFire(int slot)
     {
         var now = Server.CurrentTime;
-        if (_lastKnifeAttemptBySlot.TryGetValue(slot, out var lastAttemptAt) &&
-            now - lastAttemptAt < KnifeAttemptDedupeWindow)
+        if (_lastKnifeFireAttemptBySlot.TryGetValue(slot, out var lastAttemptAt) &&
+            now - lastAttemptAt < KnifeFireDedupeWindow)
         {
             return false;
         }
 
-        _lastKnifeAttemptBySlot[slot] = now;
+        _lastKnifeFireAttemptBySlot[slot] = now;
         return true;
+    }
+
+    private static bool TryTrackKnifeAttack2(int slot)
+    {
+        var now = Server.CurrentTime;
+        if (_lastKnifeAttack2AttemptBySlot.TryGetValue(slot, out var lastAttemptAt) &&
+            now - lastAttemptAt < KnifeAttack2DedupeWindow)
+        {
+            return false;
+        }
+
+        _lastKnifeAttack2AttemptBySlot[slot] = now;
+        return true;
+    }
+
+    private static bool IsRecentKnifeAttack2(int slot)
+    {
+        if (!_lastKnifeAttack2AttemptBySlot.TryGetValue(slot, out var attack2At))
+            return false;
+
+        return Server.CurrentTime - attack2At < KnifeAttack2MergeWindow;
     }
 
     private static void ApplyMissPenalty(int slot, int damage)
@@ -310,9 +350,9 @@ public class Invisible
         Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 
-    private static IEnumerable<CBaseEntity> GetAttachedModelEntities(CCSPlayerPawn pawn)
+    private static IEnumerable<CBaseEntity> GetAttachedModelEntities(CBaseEntity rootEntity)
     {
-        var rootNode = pawn.CBodyComponent?.SceneNode;
+        var rootNode = rootEntity.CBodyComponent?.SceneNode;
         if (rootNode == null) yield break;
 
         foreach (var childNode in Util.GetChildrenRecursive(rootNode))
@@ -322,7 +362,7 @@ public class Invisible
 
             var entityInstance = identity.EntityInstance;
             if (!entityInstance.IsValid) continue;
-            if (entityInstance.Handle == pawn.Handle) continue;
+            if (entityInstance.Handle == rootEntity.Handle) continue;
 
             var entity = entityInstance.As<CBaseEntity>();
             if (entity == null || !entity.IsValid) continue;
@@ -502,7 +542,8 @@ public class Invisible
         _entities.Clear();
         _pendingShots.Clear();
         _pendingGrenades.Clear();
-        _lastKnifeAttemptBySlot.Clear();
+        _lastKnifeFireAttemptBySlot.Clear();
+        _lastKnifeAttack2AttemptBySlot.Clear();
         _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())
@@ -524,6 +565,12 @@ public class Invisible
                 Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_flShadowStrength");
                 weapon.Render = Color.FromArgb(255, weapon.Render);
                 Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
+
+                foreach (var attachedEntity in GetAttachedModelEntities(weapon))
+                {
+                    SetAttachedShadowStrength(attachedEntity, 1.0f);
+                    SetAttachedRenderAlpha(attachedEntity, 255);
+                }
             }
 
             foreach (var attachedEntity in GetAttachedModelEntities(pawn))
