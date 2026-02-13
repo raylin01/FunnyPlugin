@@ -69,10 +69,11 @@ public class Invisible
 
             var progress = (int)Util.Map(alpha, 0, 255, 0, 20);
             var pawn = invis.Key.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
 
             if (alpha == 0)
             {
-                pawn!.EntitySpottedState.Spotted = false;
+                pawn.EntitySpottedState.Spotted = false;
                 pawn.EntitySpottedState.SpottedByMask[0] = 0;
                 _entities.Add(pawn);
             }
@@ -83,24 +84,27 @@ public class Invisible
 
             invis.Key.PrintToCenterHtml(string.Concat(Enumerable.Repeat("&#9608;", progress)) + string.Concat(Enumerable.Repeat("&#9617;", 20 - progress)));
 
-            pawn!.Render = Color.FromArgb((int)alpha, pawn.Render);
+            pawn.Render = Color.FromArgb((int)alpha, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
 
             pawn.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
 
-            foreach (var weapon in pawn.WeaponServices!.MyWeapons)
+            foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
             {
-                weapon.Value!.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
+                var weapon = weaponHandle.Value;
+                if (weapon == null || !weapon.IsValid) continue;
 
-                weapon.Value.Render = Color.FromArgb((int)alpha, weapon.Value.Render);
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+                weapon.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
+                Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_flShadowStrength");
+
+                weapon.Render = Color.FromArgb((int)alpha, weapon.Render);
+                Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
 
                 if (alpha == 0)
-                    AddInvisibleTransmitEntity(weapon.Value);
+                    AddInvisibleTransmitEntity(weapon);
                 else
-                    _entities.Remove(weapon.Value);
+                    _entities.Remove(weapon);
             }
 
             foreach (var attachedEntity in GetAttachedModelEntities(pawn))
@@ -306,16 +310,22 @@ public class Invisible
         Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 
-    private static IEnumerable<CEntityInstance> GetAttachedModelEntities(CCSPlayerPawn pawn)
+    private static IEnumerable<CBaseEntity> GetAttachedModelEntities(CCSPlayerPawn pawn)
     {
         var rootNode = pawn.CBodyComponent?.SceneNode;
         if (rootNode == null) yield break;
 
         foreach (var childNode in Util.GetChildrenRecursive(rootNode))
         {
-            var entity = childNode.Owner?.Entity;
+            var identity = childNode.Owner?.Entity;
+            if (identity == null) continue;
+
+            var entityInstance = identity.EntityInstance;
+            if (!entityInstance.IsValid) continue;
+            if (entityInstance.Handle == pawn.Handle) continue;
+
+            var entity = entityInstance.As<CBaseEntity>();
             if (entity == null || !entity.IsValid) continue;
-            if (ReferenceEquals(entity, pawn)) continue;
 
             var renderProperty = entity.GetType().GetProperty("Render");
             if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
@@ -325,7 +335,7 @@ public class Invisible
         }
     }
 
-    private static void SetAttachedRenderAlpha(CEntityInstance entity, int alpha)
+    private static void SetAttachedRenderAlpha(CBaseEntity entity, int alpha)
     {
         var renderProperty = entity.GetType().GetProperty("Render");
         if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
@@ -338,7 +348,7 @@ public class Invisible
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
     }
 
-    private static void SetAttachedShadowStrength(CEntityInstance entity, float shadowStrength)
+    private static void SetAttachedShadowStrength(CBaseEntity entity, float shadowStrength)
     {
         var shadowProperty = entity.GetType().GetProperty("ShadowStrength");
         if (shadowProperty?.PropertyType != typeof(float) || !shadowProperty.CanWrite)
@@ -459,7 +469,7 @@ public class Invisible
         return 0;
     }
 
-    private static void SetPlayerInvisibleFor(CCSPlayerController player, float time)
+    private static void SetPlayerInvisibleFor(CCSPlayerController? player, float time)
     {
         if (!Util.IsPlayerValid(player)) return;
         if (!Globals.InvisiblePlayers.TryGetValue(player, out var data)) return;
@@ -498,18 +508,22 @@ public class Invisible
         foreach (var player in Util.GetValidPlayers())
         {
             var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
 
-            pawn!.Render = Color.FromArgb(255, pawn.Render);
+            pawn.Render = Color.FromArgb(255, pawn.Render);
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
             pawn.ShadowStrength = 1.0f;
             Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_flShadowStrength");
 
-            foreach (var weapon in pawn.WeaponServices!.MyWeapons)
+            foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
             {
-                weapon.Value!.ShadowStrength = 1.0f;
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
-                weapon.Value.Render = Color.FromArgb(255, weapon.Value.Render);
-                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+                var weapon = weaponHandle.Value;
+                if (weapon == null || !weapon.IsValid) continue;
+
+                weapon.ShadowStrength = 1.0f;
+                Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_flShadowStrength");
+                weapon.Render = Color.FromArgb(255, weapon.Render);
+                Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
             }
 
             foreach (var attachedEntity in GetAttachedModelEntities(pawn))
