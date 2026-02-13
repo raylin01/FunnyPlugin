@@ -11,6 +11,9 @@ public class Invisible
 {
     private const float MissResolveDelay = 0.046875f;
     private const float GrenadeResolveDelay = 5.0f;
+    private const float KnifePrimaryResolveDelay = 0.12f;
+    private const float KnifeSecondaryResolveDelay = 0.35f;
+    private const float KnifeAttemptDedupeWindow = 0.08f;
 
     private sealed class PendingMissAttempt
     {
@@ -23,6 +26,7 @@ public class Invisible
     private static int _nextAttemptId = 1;
     private static Dictionary<int, List<PendingMissAttempt>> _pendingShots = [];
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
+    private static Dictionary<int, float> _lastKnifeAttemptBySlot = [];
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
@@ -90,12 +94,24 @@ public class Invisible
                 weapon.Value!.ShadowStrength = alpha < 128f ? 1.0f : 0.0f;
                 Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
 
-                if (alpha < 128f)
-                {
-                    weapon.Value.Render = Color.FromArgb((int)alpha, pawn.Render);
-                    Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
-                    _entities.Add(weapon.Value);
-                }
+                weapon.Value.Render = Color.FromArgb((int)alpha, weapon.Value.Render);
+                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+
+                if (alpha == 0)
+                    AddInvisibleTransmitEntity(weapon.Value);
+                else
+                    _entities.Remove(weapon.Value);
+            }
+
+            foreach (var attachedEntity in GetAttachedModelEntities(pawn))
+            {
+                SetAttachedShadowStrength(attachedEntity, alpha < 128f ? 1.0f : 0.0f);
+                SetAttachedRenderAlpha(attachedEntity, (int)alpha);
+
+                if (alpha == 0)
+                    AddInvisibleTransmitEntity(attachedEntity);
+                else
+                    _entities.Remove(attachedEntity);
             }
         }
     }
@@ -121,13 +137,31 @@ public class Invisible
 
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (IsGrenadeWeapon(weaponName)) return HookResult.Continue;
+        var isKnife = IsKnifeWeapon(weaponName);
+        if (isKnife && !TryTrackKnifeAttempt(player!.Slot)) return HookResult.Continue;
 
         var damage = GetMissedShotDamage(weaponName);
         if (damage <= 0) return HookResult.Continue;
 
-        QueueMissAttempt(_pendingShots, player!, damage, MissResolveDelay);
+        var resolveDelay = isKnife ? KnifePrimaryResolveDelay : MissResolveDelay;
+        QueueMissAttempt(_pendingShots, player!, damage, resolveDelay);
 
         return HookResult.Continue;
+    }
+
+    public static void OnPlayerButtonsChanged(CCSPlayerController player, PlayerButtons pressed, PlayerButtons released)
+    {
+        if ((pressed & PlayerButtons.Attack2) == 0) return;
+        if (!ShouldTrackMissDamage(player)) return;
+
+        var activeWeapon = player.PlayerPawn?.Value?.WeaponServices?.ActiveWeapon?.Value;
+        if (activeWeapon == null || !activeWeapon.IsValid) return;
+
+        var weaponName = NormalizeWeaponName(activeWeapon.DesignerName);
+        if (!IsKnifeWeapon(weaponName)) return;
+        if (!TryTrackKnifeAttempt(player.Slot)) return;
+
+        QueueMissAttempt(_pendingShots, player, GetMissedShotDamage(weaponName), KnifeSecondaryResolveDelay);
     }
 
     public static HookResult OnGrenadeThrown(EventGrenadeThrown @event, GameEventInfo info)
@@ -237,6 +271,19 @@ public class Invisible
         return true;
     }
 
+    private static bool TryTrackKnifeAttempt(int slot)
+    {
+        var now = Server.CurrentTime;
+        if (_lastKnifeAttemptBySlot.TryGetValue(slot, out var lastAttemptAt) &&
+            now - lastAttemptAt < KnifeAttemptDedupeWindow)
+        {
+            return false;
+        }
+
+        _lastKnifeAttemptBySlot[slot] = now;
+        return true;
+    }
+
     private static void ApplyMissPenalty(int slot, int damage)
     {
         if (damage <= 0) return;
@@ -257,6 +304,54 @@ public class Invisible
 
         pawn.Health = newHealth;
         Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
+    }
+
+    private static IEnumerable<CEntityInstance> GetAttachedModelEntities(CCSPlayerPawn pawn)
+    {
+        var rootNode = pawn.CBodyComponent?.SceneNode;
+        if (rootNode == null) yield break;
+
+        foreach (var childNode in Util.GetChildrenRecursive(rootNode))
+        {
+            var entity = childNode.Owner?.Entity;
+            if (entity == null || !entity.IsValid) continue;
+            if (ReferenceEquals(entity, pawn)) continue;
+
+            var renderProperty = entity.GetType().GetProperty("Render");
+            if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
+                continue;
+
+            yield return entity;
+        }
+    }
+
+    private static void SetAttachedRenderAlpha(CEntityInstance entity, int alpha)
+    {
+        var renderProperty = entity.GetType().GetProperty("Render");
+        if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
+            return;
+
+        if (renderProperty.GetValue(entity) is not Color currentColor) return;
+
+        var clampedAlpha = Math.Clamp(alpha, 0, 255);
+        renderProperty.SetValue(entity, Color.FromArgb(clampedAlpha, currentColor));
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
+    }
+
+    private static void SetAttachedShadowStrength(CEntityInstance entity, float shadowStrength)
+    {
+        var shadowProperty = entity.GetType().GetProperty("ShadowStrength");
+        if (shadowProperty?.PropertyType != typeof(float) || !shadowProperty.CanWrite)
+            return;
+
+        shadowProperty.SetValue(entity, shadowStrength);
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
+    }
+
+    private static void AddInvisibleTransmitEntity(CEntityInstance entity)
+    {
+        if (!_entities.Contains(entity))
+            _entities.Add(entity);
     }
 
     private static bool ShouldTrackMissDamage(CCSPlayerController? player)
@@ -377,6 +472,7 @@ public class Invisible
 
     public static void Setup()
     {
+        Globals.Plugin.RegisterListener<Listeners.OnPlayerButtonsChanged>(OnPlayerButtonsChanged);
         Globals.Plugin.RegisterEventHandler<EventBombBeginplant>(OnPlayerStartPlant);
         // EventPlayerShoot doesnt work so we use EventBulletImpact
         Globals.Plugin.RegisterEventHandler<EventBulletImpact>(OnPlayerShoot);
@@ -396,6 +492,7 @@ public class Invisible
         _entities.Clear();
         _pendingShots.Clear();
         _pendingGrenades.Clear();
+        _lastKnifeAttemptBySlot.Clear();
         _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())
@@ -411,6 +508,14 @@ public class Invisible
             {
                 weapon.Value!.ShadowStrength = 1.0f;
                 Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_flShadowStrength");
+                weapon.Value.Render = Color.FromArgb(255, weapon.Value.Render);
+                Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
+            }
+
+            foreach (var attachedEntity in GetAttachedModelEntities(pawn))
+            {
+                SetAttachedShadowStrength(attachedEntity, 1.0f);
+                SetAttachedRenderAlpha(attachedEntity, 255);
             }
         }
 
