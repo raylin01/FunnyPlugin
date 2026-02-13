@@ -37,7 +37,6 @@ public class Invisible
     }
 
     private static List<CEntityInstance> _entities = [];
-    private static List<CEntityInstance> _suppressedCosmeticEntities = [];
     private static int _nextAttemptId = 1;
     private static Dictionary<int, List<PendingMissAttempt>> _pendingShots = [];
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
@@ -47,14 +46,13 @@ public class Invisible
     private static bool _wasSkinSuppressionEnabled;
     private static float _lastWeaponSkinSweepAt;
     private static bool _loggedWeaponSkinReflectionWarning;
+    private static int _invisibleBombCarrierSlot = -1;
+    private static bool _restoredGlobalCosmetics;
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
     {
         // TODO: Should store these but dont know a good way :/
         var gameRules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").First();
-
-        foreach (var cosmeticEntity in _suppressedCosmeticEntities)
-            info.TransmitEntities.Remove(cosmeticEntity);
 
         foreach (var entity in _entities)
         {
@@ -69,6 +67,14 @@ public class Invisible
         if (c4s.Any())
         {
             var c4 = c4s.First();
+            if (!gameRules.GameRules.BombPlanted &&
+                _invisibleBombCarrierSlot >= 0 &&
+                player.Slot != _invisibleBombCarrierSlot)
+            {
+                info.TransmitEntities.Remove(c4);
+                return;
+            }
+
             if (player.Team != CsTeam.Terrorist && !gameRules.GameRules.BombPlanted && !c4.IsPlantingViaUse && !gameRules.GameRules.BombDropped)
                 info.TransmitEntities.Remove(c4);
             else
@@ -78,20 +84,25 @@ public class Invisible
 
     public static void OnTick()
     {
+        if (!_restoredGlobalCosmetics)
+        {
+            RestoreAllCosmeticsVisibility();
+            _restoredGlobalCosmetics = true;
+        }
+
         if (Globals.Config.DisableSkinsServerWide)
         {
-            SuppressCosmeticsServerWide();
             SuppressWeaponSkinsServerWide();
             _wasSkinSuppressionEnabled = true;
         }
         else if (_wasSkinSuppressionEnabled)
         {
-            RestoreCosmeticsServerWide();
-            _suppressedCosmeticEntities.Clear();
             _wasSkinSuppressionEnabled = false;
             _lastWeaponSkinSweepAt = 0.0f;
             _loggedWeaponSkinReflectionWarning = false;
         }
+
+        _invisibleBombCarrierSlot = GetInvisibleBombCarrierSlot();
 
         _entities.Clear();
 
@@ -466,34 +477,6 @@ public class Invisible
         }
     }
 
-    private static void SuppressCosmeticsServerWide()
-    {
-        _suppressedCosmeticEntities.Clear();
-
-        foreach (var player in Util.GetValidPlayers())
-        {
-            var pawn = player.PlayerPawn.Value;
-            if (pawn == null || !pawn.IsValid) continue;
-
-            foreach (var attachedEntity in GetAttachedModelEntities(pawn))
-            {
-                SetAttachedShadowStrength(attachedEntity, 0.0f);
-                SetAttachedRenderAlpha(attachedEntity, 0);
-                AddSuppressedCosmeticEntity(attachedEntity);
-            }
-
-            foreach (var weapon in GetWeaponEntities(pawn))
-            {
-                foreach (var attachedEntity in GetAttachedModelEntities(weapon))
-                {
-                    SetAttachedShadowStrength(attachedEntity, 0.0f);
-                    SetAttachedRenderAlpha(attachedEntity, 0);
-                    AddSuppressedCosmeticEntity(attachedEntity);
-                }
-            }
-        }
-    }
-
     private static void SuppressWeaponSkinsServerWide()
     {
         if (Server.CurrentTime - _lastWeaponSkinSweepAt < WeaponSkinSweepInterval) return;
@@ -634,7 +617,29 @@ public class Invisible
         }
     }
 
-    private static void RestoreCosmeticsServerWide()
+    private static int GetInvisibleBombCarrierSlot()
+    {
+        foreach (var invisibleEntry in Globals.InvisiblePlayers)
+        {
+            var invisiblePlayer = invisibleEntry.Key;
+            if (!Util.IsPlayerValid(invisiblePlayer)) continue;
+            if (invisiblePlayer.Team != CsTeam.Terrorist) continue;
+
+            var pawn = invisiblePlayer.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid) continue;
+
+            foreach (var weapon in GetWeaponEntities(pawn))
+            {
+                var weaponName = NormalizeWeaponName(weapon.DesignerName);
+                if (weaponName.Contains("c4"))
+                    return invisiblePlayer.Slot;
+            }
+        }
+
+        return -1;
+    }
+
+    private static void RestoreAllCosmeticsVisibility()
     {
         foreach (var player in Util.GetValidPlayers())
         {
@@ -656,12 +661,6 @@ public class Invisible
                 }
             }
         }
-    }
-
-    private static void AddSuppressedCosmeticEntity(CEntityInstance entity)
-    {
-        if (!_suppressedCosmeticEntities.Contains(entity))
-            _suppressedCosmeticEntities.Add(entity);
     }
 
     private static bool ShouldTrackMissDamage(CCSPlayerController? player)
@@ -800,7 +799,6 @@ public class Invisible
     public static void Cleanup()
     {
         _entities.Clear();
-        _suppressedCosmeticEntities.Clear();
         _pendingShots.Clear();
         _pendingGrenades.Clear();
         _lastKnifeFireAttemptBySlot.Clear();
@@ -809,6 +807,8 @@ public class Invisible
         _wasSkinSuppressionEnabled = false;
         _lastWeaponSkinSweepAt = 0.0f;
         _loggedWeaponSkinReflectionWarning = false;
+        _invisibleBombCarrierSlot = -1;
+        _restoredGlobalCosmetics = false;
         _nextAttemptId = 1;
 
         foreach (var player in Util.GetValidPlayers())
