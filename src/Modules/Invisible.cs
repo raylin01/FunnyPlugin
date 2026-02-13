@@ -34,6 +34,7 @@ public class Invisible
     }
 
     private static List<CEntityInstance> _entities = [];
+    private static List<CEntityInstance> _suppressedCosmeticEntities = [];
     private static int _nextAttemptId = 1;
     private static Dictionary<int, List<PendingMissAttempt>> _pendingShots = [];
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
@@ -46,6 +47,9 @@ public class Invisible
     {
         // TODO: Should store these but dont know a good way :/
         var gameRules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").First();
+
+        foreach (var cosmeticEntity in _suppressedCosmeticEntities)
+            info.TransmitEntities.Remove(cosmeticEntity);
 
         foreach (var entity in _entities)
         {
@@ -77,6 +81,7 @@ public class Invisible
         else if (_wasSkinSuppressionEnabled)
         {
             RestoreCosmeticsServerWide();
+            _suppressedCosmeticEntities.Clear();
             _wasSkinSuppressionEnabled = false;
         }
 
@@ -384,7 +389,7 @@ public class Invisible
         Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 
-    private static IEnumerable<CBaseEntity> GetAttachedModelEntities(CBaseEntity rootEntity)
+    private static IEnumerable<CBaseModelEntity> GetAttachedModelEntities(CBaseEntity rootEntity)
     {
         var rootNode = rootEntity.CBodyComponent?.SceneNode;
         if (rootNode == null) yield break;
@@ -398,37 +403,23 @@ public class Invisible
             if (!entityInstance.IsValid) continue;
             if (entityInstance.Handle == rootEntity.Handle) continue;
 
-            var entity = entityInstance.As<CBaseEntity>();
+            var entity = entityInstance.As<CBaseModelEntity>();
             if (entity == null || !entity.IsValid) continue;
-
-            var renderProperty = entity.GetType().GetProperty("Render");
-            if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
-                continue;
 
             yield return entity;
         }
     }
 
-    private static void SetAttachedRenderAlpha(CBaseEntity entity, int alpha)
+    private static void SetAttachedRenderAlpha(CBaseModelEntity entity, int alpha)
     {
-        var renderProperty = entity.GetType().GetProperty("Render");
-        if (renderProperty?.PropertyType != typeof(Color) || !renderProperty.CanRead || !renderProperty.CanWrite)
-            return;
-
-        if (renderProperty.GetValue(entity) is not Color currentColor) return;
-
         var clampedAlpha = Math.Clamp(alpha, 0, 255);
-        renderProperty.SetValue(entity, Color.FromArgb(clampedAlpha, currentColor));
+        entity.Render = Color.FromArgb(clampedAlpha, entity.Render);
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
     }
 
-    private static void SetAttachedShadowStrength(CBaseEntity entity, float shadowStrength)
+    private static void SetAttachedShadowStrength(CBaseModelEntity entity, float shadowStrength)
     {
-        var shadowProperty = entity.GetType().GetProperty("ShadowStrength");
-        if (shadowProperty?.PropertyType != typeof(float) || !shadowProperty.CanWrite)
-            return;
-
-        shadowProperty.SetValue(entity, shadowStrength);
+        entity.ShadowStrength = shadowStrength;
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
     }
 
@@ -451,6 +442,8 @@ public class Invisible
 
     private static void SuppressCosmeticsServerWide()
     {
+        _suppressedCosmeticEntities.Clear();
+
         foreach (var player in Util.GetValidPlayers())
         {
             var pawn = player.PlayerPawn.Value;
@@ -460,6 +453,7 @@ public class Invisible
             {
                 SetAttachedShadowStrength(attachedEntity, 0.0f);
                 SetAttachedRenderAlpha(attachedEntity, 0);
+                AddSuppressedCosmeticEntity(attachedEntity);
             }
 
             foreach (var weapon in GetWeaponEntities(pawn))
@@ -468,6 +462,7 @@ public class Invisible
                 {
                     SetAttachedShadowStrength(attachedEntity, 0.0f);
                     SetAttachedRenderAlpha(attachedEntity, 0);
+                    AddSuppressedCosmeticEntity(attachedEntity);
                 }
             }
         }
@@ -495,6 +490,12 @@ public class Invisible
                 }
             }
         }
+    }
+
+    private static void AddSuppressedCosmeticEntity(CEntityInstance entity)
+    {
+        if (!_suppressedCosmeticEntities.Contains(entity))
+            _suppressedCosmeticEntities.Add(entity);
     }
 
     private static bool ShouldTrackMissDamage(CCSPlayerController? player)
@@ -633,6 +634,7 @@ public class Invisible
     public static void Cleanup()
     {
         _entities.Clear();
+        _suppressedCosmeticEntities.Clear();
         _pendingShots.Clear();
         _pendingGrenades.Clear();
         _lastKnifeFireAttemptBySlot.Clear();
