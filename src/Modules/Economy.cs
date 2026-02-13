@@ -66,15 +66,34 @@ public static class Economy
         if (Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
         if (Util.IsSpecialPlayer(player!)) return HookResult.Continue;
 
+        var grenadeLimit = Math.Max(0, Globals.Config.NonSpecialGrenadeBuyLimit);
         var purchasedWeapon = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (!IsGrenadeWeapon(purchasedWeapon)) return HookResult.Continue;
 
-        GrenadeBuysBySlot[player.Slot] = GrenadeBuysBySlot.GetValueOrDefault(player.Slot) + 1;
+        var buys = GrenadeBuysBySlot.GetValueOrDefault(player.Slot) + 1;
+        GrenadeBuysBySlot[player.Slot] = buys;
+
+        if (buys > grenadeLimit || CountThrowableInventory(player) > grenadeLimit)
+        {
+            RemoveOneThrowable(player, purchasedWeapon);
+            GrenadeBuysBySlot[player.Slot] = grenadeLimit;
+            Util.ServerPrintToChat(player, $"You can only buy {grenadeLimit} grenade(s) per round.");
+        }
 
         return HookResult.Continue;
     }
 
     public static HookResult OnBuyCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        return OnThrowableBuyCommand(caller, command, inspectArguments: true);
+    }
+
+    public static HookResult OnAutoBuyCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        return OnThrowableBuyCommand(caller, command, inspectArguments: false);
+    }
+
+    private static HookResult OnThrowableBuyCommand(CCSPlayerController? caller, CommandInfo command, bool inspectArguments)
     {
         if (!Util.IsPlayerValid(caller)) return HookResult.Continue;
         if (!Globals.Config.LimitNonSpecialGrenadeBuys) return HookResult.Continue;
@@ -84,8 +103,11 @@ public static class Economy
         var currentGrenadeBuys = GrenadeBuysBySlot.GetValueOrDefault(caller.Slot);
         if (currentGrenadeBuys < grenadeLimit) return HookResult.Continue;
 
-        var attemptedItem = GetFirstArgument(command.ArgString);
-        if (!IsGrenadeWeapon(attemptedItem)) return HookResult.Continue;
+        if (inspectArguments)
+        {
+            var attemptedItem = GetFirstArgument(command.ArgString);
+            if (!IsGrenadeWeapon(attemptedItem)) return HookResult.Continue;
+        }
 
         Util.ServerPrintToChat(caller, $"You can only buy {grenadeLimit} grenade(s) per round.");
         return HookResult.Handled;
@@ -184,12 +206,59 @@ public static class Economy
                weaponName.Contains("tagrenade");
     }
 
+    private static int CountThrowableInventory(CCSPlayerController player)
+    {
+        var pawn = player.PlayerPawn?.Value;
+        if (pawn == null || !pawn.IsValid) return 0;
+
+        var total = 0;
+        foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid) continue;
+
+            var weaponName = NormalizeWeaponName(weapon.DesignerName);
+            if (IsGrenadeWeapon(weaponName))
+                total++;
+        }
+
+        return total;
+    }
+
+    private static void RemoveOneThrowable(CCSPlayerController player, string preferredWeaponName)
+    {
+        var pawn = player.PlayerPawn?.Value;
+        if (pawn == null || !pawn.IsValid) return;
+
+        CBaseEntity? fallback = null;
+        foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid) continue;
+
+            var weaponName = NormalizeWeaponName(weapon.DesignerName);
+            if (!IsGrenadeWeapon(weaponName)) continue;
+
+            if (weaponName == preferredWeaponName)
+            {
+                weapon.Remove();
+                return;
+            }
+
+            fallback ??= weapon;
+        }
+
+        fallback?.Remove();
+    }
+
     public static void Setup()
     {
         Globals.Plugin.RegisterEventHandler<EventRoundStart>(OnRoundStart);
         Globals.Plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         Globals.Plugin.RegisterEventHandler<EventItemPurchase>(OnItemPurchase);
-        Globals.Plugin.AddCommandListener("buy", OnBuyCommand);
+        Globals.Plugin.AddCommandListener("buy", OnBuyCommand, HookMode.Pre);
+        Globals.Plugin.AddCommandListener("autobuy", OnAutoBuyCommand, HookMode.Pre);
+        Globals.Plugin.AddCommandListener("rebuy", OnAutoBuyCommand, HookMode.Pre);
 
         Globals.Plugin.AddCommand("css_specialmoney", "Configures special player round money rules", CommandEconomy.OnSpecialMoneyCommand);
         Globals.Plugin.AddCommand("css_nadelimit", "Configures grenade buy limit for non-special players", CommandEconomy.OnNadeLimitCommand);

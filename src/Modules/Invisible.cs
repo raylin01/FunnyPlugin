@@ -12,15 +12,24 @@ public class Invisible
     private const float MissResolveDelay = 0.046875f;
     private const float GrenadeResolveDelay = 5.0f;
     private const float KnifePrimaryResolveDelay = 0.12f;
-    private const float KnifeSecondaryResolveDelay = 0.35f;
+    private const float KnifeSecondaryResolveDelay = 0.8f;
     private const float KnifeFireDedupeWindow = 0.08f;
     private const float KnifeAttack2DedupeWindow = 0.2f;
     private const float KnifeAttack2MergeWindow = 0.7f;
+
+    private enum AttemptKind
+    {
+        Shot,
+        Knife,
+        Grenade
+    }
 
     private sealed class PendingMissAttempt
     {
         public int Id { get; init; }
         public int Damage { get; init; }
+        public float CreatedAt { get; init; }
+        public AttemptKind Kind { get; init; }
         public bool Resolved { get; set; }
     }
 
@@ -30,6 +39,7 @@ public class Invisible
     private static Dictionary<int, List<PendingMissAttempt>> _pendingGrenades = [];
     private static Dictionary<int, float> _lastKnifeFireAttemptBySlot = [];
     private static Dictionary<int, float> _lastKnifeAttack2AttemptBySlot = [];
+    private static Dictionary<int, float> _lastKnifeHitBySlot = [];
     private static bool _wasSkinSuppressionEnabled;
 
     public static void OnPlayerTransmit(CCheckTransmitInfo info, CCSPlayerController player)
@@ -179,7 +189,7 @@ public class Invisible
         if (damage <= 0) return HookResult.Continue;
 
         var resolveDelay = isKnife ? KnifePrimaryResolveDelay : MissResolveDelay;
-        QueueMissAttempt(_pendingShots, player!, damage, resolveDelay);
+        QueueMissAttempt(_pendingShots, player!, damage, resolveDelay, isKnife ? AttemptKind.Knife : AttemptKind.Shot);
 
         return HookResult.Continue;
     }
@@ -196,7 +206,7 @@ public class Invisible
         if (!IsKnifeWeapon(weaponName)) return;
         if (!TryTrackKnifeAttack2(player.Slot)) return;
 
-        QueueMissAttempt(_pendingShots, player, GetMissedShotDamage(weaponName), KnifeSecondaryResolveDelay);
+        QueueMissAttempt(_pendingShots, player, GetMissedShotDamage(weaponName), KnifeSecondaryResolveDelay, AttemptKind.Knife);
     }
 
     public static HookResult OnGrenadeThrown(EventGrenadeThrown @event, GameEventInfo info)
@@ -207,7 +217,7 @@ public class Invisible
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (!IsGrenadeWeapon(weaponName)) return HookResult.Continue;
 
-        QueueMissAttempt(_pendingGrenades, player!, 5, GrenadeResolveDelay);
+        QueueMissAttempt(_pendingGrenades, player!, 5, GrenadeResolveDelay, AttemptKind.Grenade);
 
         return HookResult.Continue;
     }
@@ -246,6 +256,9 @@ public class Invisible
         if (Globals.InvisiblePlayers.ContainsKey(attacker!)) return HookResult.Continue;
 
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
+        if (IsKnifeWeapon(weaponName))
+            _lastKnifeHitBySlot[attacker.Slot] = Server.CurrentTime;
+
         if (IsGrenadeWeapon(weaponName))
         {
             if (!ResolveOldestAttempt(_pendingGrenades, attacker!))
@@ -260,7 +273,7 @@ public class Invisible
         return HookResult.Continue;
     }
 
-    private static void QueueMissAttempt(Dictionary<int, List<PendingMissAttempt>> pendingBySlot, CCSPlayerController player, int damage, float delay)
+    private static void QueueMissAttempt(Dictionary<int, List<PendingMissAttempt>> pendingBySlot, CCSPlayerController player, int damage, float delay, AttemptKind kind)
     {
         if (damage <= 0) return;
 
@@ -274,7 +287,9 @@ public class Invisible
         var attempt = new PendingMissAttempt
         {
             Id = _nextAttemptId++,
-            Damage = damage
+            Damage = damage,
+            Kind = kind,
+            CreatedAt = Server.CurrentTime
         };
 
         attempts.Add(attempt);
@@ -285,6 +300,13 @@ public class Invisible
 
             var currentAttempt = activeAttempts.FirstOrDefault(item => item.Id == attempt.Id);
             if (currentAttempt == null) return;
+
+            if (currentAttempt.Kind == AttemptKind.Knife &&
+                _lastKnifeHitBySlot.TryGetValue(slot, out var lastKnifeHitAt) &&
+                lastKnifeHitAt >= currentAttempt.CreatedAt)
+            {
+                currentAttempt.Resolved = true;
+            }
 
             if (!currentAttempt.Resolved)
                 ApplyMissPenalty(slot, currentAttempt.Damage);
@@ -615,6 +637,7 @@ public class Invisible
         _pendingGrenades.Clear();
         _lastKnifeFireAttemptBySlot.Clear();
         _lastKnifeAttack2AttemptBySlot.Clear();
+        _lastKnifeHitBySlot.Clear();
         _wasSkinSuppressionEnabled = false;
         _nextAttemptId = 1;
 
