@@ -19,13 +19,18 @@ Note: Make sure you have the `@css/generic` permission otherwise you wont be abl
 ### Admin Commands:
 1. `!rcon <command>` runs a server command.
 2. `!money <amount> <player name>` gives a player money.
-3. `!specialmoney show` shows the current special-player round money settings.
-4. `!specialmoney enabled <0|1>` toggles special-player round money automation.
-5. `!specialmoney amount <money>` sets how much money special players get on configured rounds.
-6. `!specialmoney rounds <start1> <end1> <start2> <end2>` sets money round windows.
-7. `!nadelimit show` shows current grenade-buy-limit settings.
-8. `!nadelimit enabled <0|1>` toggles non-special grenade limit.
-9. `!nadelimit limit <count>` sets the max grenade buys per round for non-special players.
+3. `!start` ends warmup and starts live play.
+4. `!pause` pauses the match (technical pause).
+5. `!stop` puts the server back into warmup.
+6. `!rr` restarts the current round.
+7. `!map <mapname>` changes the current map.
+8. `!specialmoney show` shows the current special-player round money settings.
+9. `!specialmoney enabled <0|1>` toggles special-player round money automation.
+10. `!specialmoney amount <money>` sets how much money special players get on configured rounds.
+11. `!specialmoney rounds <start1> <end1> <start2> <end2>` sets money round windows.
+12. `!nadelimit show` shows current grenade-buy-limit settings.
+13. `!nadelimit enabled <0|1>` toggles non-special grenade limit.
+14. `!nadelimit limit <count>` sets the max grenade buys per round for non-special players.
 
 Note: `!specialmoney` and `!nadelimit` also persist to the plugin JSON config file.
 
