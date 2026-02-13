@@ -41,7 +41,8 @@ public static class CommandEconomy
             }
 
             Globals.Config.SpecialPlayerRoundMoneyAmount = Math.Max(0, amount);
-            Reply(caller, $"Special money amount set to: {Globals.Config.SpecialPlayerRoundMoneyAmount}");
+            var effectiveAmount = Math.Min(Globals.Config.SpecialPlayerRoundMoneyAmount, Economy.MaxSupportedMoney);
+            Reply(caller, $"Special money amount set to: {Globals.Config.SpecialPlayerRoundMoneyAmount} (runtime cap: {effectiveAmount})");
             PersistConfigReply(caller);
             return;
         }

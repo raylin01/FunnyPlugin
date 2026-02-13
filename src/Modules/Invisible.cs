@@ -120,7 +120,7 @@ public class Invisible
         if (!ShouldTrackMissDamage(player)) return HookResult.Continue;
 
         var weaponName = NormalizeWeaponName(@event.Weapon ?? string.Empty);
-        if (IsKnifeWeapon(weaponName) || IsGrenadeWeapon(weaponName)) return HookResult.Continue;
+        if (IsGrenadeWeapon(weaponName)) return HookResult.Continue;
 
         var damage = GetMissedShotDamage(weaponName);
         if (damage <= 0) return HookResult.Continue;
@@ -356,6 +356,7 @@ public class Invisible
 
     private static int GetMissedShotDamage(string weaponName)
     {
+        if (IsKnifeWeapon(weaponName)) return 5;
         if (IsSniperWeapon(weaponName)) return 8;
         if (IsShotgunWeapon(weaponName) || IsGrenadeWeapon(weaponName)) return 5;
         if (IsPistolWeapon(weaponName) || IsSmgWeapon(weaponName) || IsRifleOrLmgWeapon(weaponName)) return 2;

@@ -45,6 +45,14 @@ public static class CommandMatch
         Reply(caller, "Match paused.");
     }
 
+    public static void OnUnpauseCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        if (!HasAccess(caller)) return;
+
+        Server.ExecuteCommand("mp_unpause_match");
+        Reply(caller, "Match unpaused.");
+    }
+
     public static void OnStopCommand(CCSPlayerController? caller, CommandInfo command)
     {
         if (!HasAccess(caller)) return;

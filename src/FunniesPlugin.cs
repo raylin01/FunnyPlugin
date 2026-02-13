@@ -13,7 +13,7 @@ public class FunniesConfig : BasePluginConfig
     [JsonPropertyName("CommandPermission")] public string AdminPermission { get; set; } = "@css/generic";
     [JsonPropertyName("RconPermission")] public string RconPermission { get; set; } = "@css/rcon";
     [JsonPropertyName("SpecialPlayerRoundMoneyEnabled")] public bool SpecialPlayerRoundMoneyEnabled { get; set; } = true;
-    [JsonPropertyName("SpecialPlayerRoundMoneyAmount")] public int SpecialPlayerRoundMoneyAmount { get; set; } = 999999;
+    [JsonPropertyName("SpecialPlayerRoundMoneyAmount")] public int SpecialPlayerRoundMoneyAmount { get; set; } = 65535;
     [JsonPropertyName("SpecialPlayerMoneyRoundStartFirstHalf")] public int SpecialPlayerMoneyRoundStartFirstHalf { get; set; } = 2;
     [JsonPropertyName("SpecialPlayerMoneyRoundEndFirstHalf")] public int SpecialPlayerMoneyRoundEndFirstHalf { get; set; } = 12;
     [JsonPropertyName("SpecialPlayerMoneyRoundStartSecondHalf")] public int SpecialPlayerMoneyRoundStartSecondHalf { get; set; } = 14;
@@ -42,6 +42,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         AddCommand("css_rcon", "Runs a command", CommandRcon.OnRconCommand);
         AddCommand("css_start", "Starts the live game", CommandMatch.OnStartCommand);
         AddCommand("css_pause", "Pauses the match", CommandMatch.OnPauseCommand);
+        AddCommand("css_unpause", "Unpauses the match", CommandMatch.OnUnpauseCommand);
         AddCommand("css_stop", "Returns match to warmup", CommandMatch.OnStopCommand);
         AddCommand("css_rr", "Restarts the round", CommandMatch.OnRestartRoundCommand);
         AddCommand("css_map", "Changes map", CommandMatch.OnMapCommand);

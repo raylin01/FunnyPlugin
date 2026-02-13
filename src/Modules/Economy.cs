@@ -8,6 +8,8 @@ namespace Funnies.Modules;
 
 public static class Economy
 {
+    public const int MaxSupportedMoney = 65535;
+
     private static readonly Dictionary<int, int> GrenadeBuysBySlot = [];
     private static int _currentRound;
 
@@ -28,9 +30,12 @@ public static class Economy
 
         if (Globals.Config.SpecialPlayerRoundMoneyEnabled && IsConfiguredMoneyRound(_currentRound))
         {
+            var specialMoney = GetEffectiveSpecialMoneyAmount();
+            EnforceSpecialMoneyLimit(specialMoney);
+
             Globals.Plugin.AddTimer(0.1f, () =>
             {
-                GrantSpecialPlayersMoney(Globals.Config.SpecialPlayerRoundMoneyAmount);
+                GrantSpecialPlayersMoney(specialMoney);
             });
         }
 
@@ -48,11 +53,17 @@ public static class Economy
 
     public static HookResult OnItemPurchase(EventItemPurchase @event, GameEventInfo info)
     {
-        if (!Globals.Config.LimitNonSpecialGrenadeBuys) return HookResult.Continue;
-        if (Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
-
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
+
+        if (ShouldTopUpSpecialMoney(player!))
+        {
+            var specialMoney = GetEffectiveSpecialMoneyAmount();
+            Globals.Plugin.AddTimer(0.02f, () => GrantPlayerMoney(player, specialMoney));
+        }
+
+        if (!Globals.Config.LimitNonSpecialGrenadeBuys) return HookResult.Continue;
+        if (Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
         if (Util.IsSpecialPlayer(player!)) return HookResult.Continue;
 
         var purchasedWeapon = NormalizeWeaponName(@event.Weapon ?? string.Empty);
@@ -82,16 +93,41 @@ public static class Economy
 
     private static void GrantSpecialPlayersMoney(int amount)
     {
-        var money = Math.Max(0, amount);
+        var money = Math.Clamp(amount, 0, MaxSupportedMoney);
 
         foreach (var player in Util.GetValidPlayers())
         {
             if (!Util.IsSpecialPlayer(player)) continue;
-            if (player.InGameMoneyServices == null) continue;
-
-            player.InGameMoneyServices.Account = money;
-            Utilities.SetStateChanged(player, "CCSPlayerController", "m_pInGameMoneyServices");
+            GrantPlayerMoney(player, money);
         }
+    }
+
+    private static void GrantPlayerMoney(CCSPlayerController player, int amount)
+    {
+        if (!Util.IsPlayerValid(player)) return;
+        if (player.InGameMoneyServices == null) return;
+
+        var money = Math.Clamp(amount, 0, MaxSupportedMoney);
+        player.InGameMoneyServices.Account = money;
+        Utilities.SetStateChanged(player, "CCSPlayerController", "m_pInGameMoneyServices");
+    }
+
+    private static int GetEffectiveSpecialMoneyAmount()
+    {
+        return Math.Clamp(Globals.Config.SpecialPlayerRoundMoneyAmount, 0, MaxSupportedMoney);
+    }
+
+    private static bool ShouldTopUpSpecialMoney(CCSPlayerController player)
+    {
+        return Globals.Config.SpecialPlayerRoundMoneyEnabled &&
+               IsConfiguredMoneyRound(_currentRound) &&
+               Util.IsSpecialPlayer(player);
+    }
+
+    private static void EnforceSpecialMoneyLimit(int amount)
+    {
+        var money = Math.Clamp(amount, 0, MaxSupportedMoney);
+        Server.ExecuteCommand($"mp_maxmoney {money}");
     }
 
     private static bool IsConfiguredMoneyRound(int round)
