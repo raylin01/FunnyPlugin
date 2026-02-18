@@ -1,0 +1,23 @@
+Run dotnet build --no-restore --configuration Release
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Wallhack.cs(13,64): warning CS8602: Dereference of a possibly null reference. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Globals.cs(8,33): warning CS8618: Non-nullable property 'Config' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Models/InvisibleData.cs(7,25): warning CS8618: Non-nullable field 'GlowEnt' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the field as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Models/InvisibleData.cs(8,25): warning CS8618: Non-nullable field 'ModelRelay' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the field as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/FunniesPlugin.cs(31,26): warning CS8618: Non-nullable property 'Config' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Error: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Invisible.cs(565,39): error CS1061: 'CBasePlayerWeapon' does not contain a definition for 'ItemServices' and no accessible extension method 'ItemServices' accepting a first argument of type 'CBasePlayerWeapon' could be found (are you missing a using directive or an assembly reference?) [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Invisible.cs(793,64): warning CS8602: Dereference of a possibly null reference. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+
+Build FAILED.
+
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Wallhack.cs(13,64): warning CS8602: Dereference of a possibly null reference. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Globals.cs(8,33): warning CS8618: Non-nullable property 'Config' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Models/InvisibleData.cs(7,25): warning CS8618: Non-nullable field 'GlowEnt' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the field as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Models/InvisibleData.cs(8,25): warning CS8618: Non-nullable field 'ModelRelay' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the field as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/FunniesPlugin.cs(31,26): warning CS8618: Non-nullable property 'Config' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Warning: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Invisible.cs(793,64): warning CS8602: Dereference of a possibly null reference. [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+Error: /home/runner/work/FunnyPlugin/FunnyPlugin/src/Modules/Invisible.cs(565,39): error CS1061: 'CBasePlayerWeapon' does not contain a definition for 'ItemServices' and no accessible extension method 'ItemServices' accepting a first argument of type 'CBasePlayerWeapon' could be found (are you missing a using directive or an assembly reference?) [/home/runner/work/FunnyPlugin/FunnyPlugin/Funnies.csproj]
+    6 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:05.91
+Error: The operation was canceled.

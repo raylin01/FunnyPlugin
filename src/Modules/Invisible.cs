@@ -560,22 +560,33 @@ public class Invisible
     {
         // Use ItemServices API to fully disable weapon skins
         // Set PaintKit to 0 (default), remove StatTrak, reset wear to minimal
-        try
+        var itemServices = TryGetItemServices(weapon);
+        if (itemServices != null)
         {
-            var itemServices = weapon.ItemServices;
-            if (itemServices == null) return;
-
             // Use reflection to call SetPaintKit, SetStatTrak, SetWear methods
             // These are server-side methods that force default skin appearance
             TryCallItemServicesMethod(itemServices, "SetPaintKit", 0);
             TryCallItemServicesMethod(itemServices, "SetStatTrak", 0);
             TryCallItemServicesMethod(itemServices, "SetWear", 0.001f);
             TryCallItemServicesMethod(itemServices, "SetSeed", 0);
+            return;
+        }
+
+        // Fallback to reflection-based property setting if ItemServices unavailable
+        SuppressWeaponSkinViaFallback(weapon);
+    }
+
+    private static object? TryGetItemServices(CBasePlayerWeapon weapon)
+    {
+        try
+        {
+            var type = weapon.GetType();
+            var property = type.GetProperty("ItemServices", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            return property?.GetValue(weapon);
         }
         catch
         {
-            // Fallback to reflection-based property setting if ItemServices methods unavailable
-            SuppressWeaponSkinViaFallback(weapon);
+            return null;
         }
     }
 
