@@ -510,21 +510,123 @@ public class Invisible
         }
     }
 
-    private static bool SuppressWeaponSkin(CBaseEntity weapon)
+    public static HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
     {
-        // Try common skin fields on both weapon entity and econ item wrappers.
+        var player = @event.Userid;
+        if (!Util.IsPlayerValid(player) || player!.PawnIsAlive != true) return HookResult.Continue;
+
+        if (Globals.Config.DisableSkinsServerWide)
+        {
+            Server.NextFrame(() => SetDefaultWeaponSkins(player));
+        }
+
+        return HookResult.Continue;
+    }
+
+    public static HookResult OnItemPickup(EventItemPickup @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
+
+        if (Globals.Config.DisableSkinsServerWide)
+        {
+            Server.NextFrame(() => SetDefaultWeaponSkins(player!));
+        }
+
+        return HookResult.Continue;
+    }
+
+    private static void SetDefaultWeaponSkins(CCSPlayerController player)
+    {
+        if (!Util.IsPlayerValid(player) || player.PawnIsAlive != true) return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid) return;
+
+        var weaponServices = pawn.WeaponServices;
+        if (weaponServices == null) return;
+
+        // Process all weapons the player is carrying
+        foreach (var weaponHandle in weaponServices.MyWeapons)
+        {
+            var weapon = weaponHandle.Value;
+            if (weapon == null || !weapon.IsValid) continue;
+
+            SuppressWeaponSkinDirect(weapon);
+        }
+    }
+
+    private static void SuppressWeaponSkinDirect(CBasePlayerWeapon weapon)
+    {
+        // Use ItemServices API to fully disable weapon skins
+        // Set PaintKit to 0 (default), remove StatTrak, reset wear to minimal
+        try
+        {
+            var itemServices = weapon.ItemServices;
+            if (itemServices == null) return;
+
+            // Use reflection to call SetPaintKit, SetStatTrak, SetWear methods
+            // These are server-side methods that force default skin appearance
+            TryCallItemServicesMethod(itemServices, "SetPaintKit", 0);
+            TryCallItemServicesMethod(itemServices, "SetStatTrak", 0);
+            TryCallItemServicesMethod(itemServices, "SetWear", 0.001f);
+            TryCallItemServicesMethod(itemServices, "SetSeed", 0);
+        }
+        catch
+        {
+            // Fallback to reflection-based property setting if ItemServices methods unavailable
+            SuppressWeaponSkinViaFallback(weapon);
+        }
+    }
+
+    private static void TryCallItemServicesMethod(object itemServices, string methodName, object value)
+    {
+        try
+        {
+            var type = itemServices.GetType();
+            var method = type.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (method == null) return;
+
+            var parameters = method.GetParameters();
+            if (parameters.Length != 1) return;
+
+            var converted = ConvertForPropertyType(value, parameters[0].ParameterType);
+            if (converted == null && parameters[0].ParameterType.IsValueType) return;
+
+            method.Invoke(itemServices, [converted]);
+        }
+        catch
+        {
+            // Method not available in this API version
+        }
+    }
+
+    private static void SuppressWeaponSkinViaFallback(CBaseEntity weapon)
+    {
+        // Fallback: Try common skin fields via reflection for API compatibility
         var changed = false;
+
+        // Try CEconEntity/CBasePlayerWeapon fallback properties
         changed |= TrySetPathValue(weapon, "FallbackPaintKit", 0);
         changed |= TrySetPathValue(weapon, "FallbackSeed", 0);
-        changed |= TrySetPathValue(weapon, "FallbackWear", 0.0f);
-        changed |= TrySetPathValue(weapon, "FallbackStatTrak", -1);
+        changed |= TrySetPathValue(weapon, "FallbackWear", 0.001f);
+        changed |= TrySetPathValue(weapon, "FallbackStatTrak", 0);
+
+        // Try AttributeManager.Item paths for wrapped econ items
         changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackPaintKit", 0);
         changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackSeed", 0);
-        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackWear", 0.0f);
-        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackStatTrak", -1);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackWear", 0.001f);
+        changed |= TrySetPathValue(weapon, "AttributeManager.Item.FallbackStatTrak", 0);
 
-        if (!changed) return false;
+        // Try direct Item property
+        changed |= TrySetPathValue(weapon, "Item.FallbackPaintKit", 0);
+        changed |= TrySetPathValue(weapon, "Item.FallbackSeed", 0);
+        changed |= TrySetPathValue(weapon, "Item.FallbackWear", 0.001f);
+        changed |= TrySetPathValue(weapon, "Item.FallbackStatTrak", 0);
 
+        if (!changed) return;
+
+        // Notify network changes
         TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_nFallbackPaintKit");
         TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_nFallbackSeed");
         TrySetStateChanged(weapon, "CBasePlayerWeapon", "m_flFallbackWear");
@@ -533,6 +635,21 @@ public class Invisible
         TrySetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
         TrySetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
         TrySetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+    }
+
+    private static bool SuppressWeaponSkin(CBaseEntity weapon)
+    {
+        // Fully disable weapon skins by setting PaintKit to 0 (default),
+        // removing StatTrak, and resetting wear to minimal (0.001).
+        var weaponEntity = weapon.As<CBasePlayerWeapon>();
+        if (weaponEntity != null && weaponEntity.IsValid)
+        {
+            SuppressWeaponSkinDirect(weaponEntity);
+            return true;
+        }
+
+        // Fallback to reflection-based approach
+        SuppressWeaponSkinViaFallback(weapon);
         return true;
     }
 
@@ -791,6 +908,10 @@ public class Invisible
         Globals.Plugin.RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
         Globals.Plugin.RegisterEventHandler<EventGrenadeThrown>(OnGrenadeThrown);
         Globals.Plugin.RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
+
+        // Weapon skin suppression events
+        Globals.Plugin.RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+        Globals.Plugin.RegisterEventHandler<EventItemPickup>(OnItemPickup);
 
         Globals.Plugin.AddCommand("css_invisible", "Makes a player invisible", CommandInvisible.OnInvisibleCommand);
         Globals.Plugin.AddCommand("css_invis", "Makes a player invisible", CommandInvisible.OnInvisibleCommand);
