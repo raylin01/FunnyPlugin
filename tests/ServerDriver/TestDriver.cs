@@ -50,6 +50,27 @@ public partial class TestDriver : BasePlugin
     public override void Load(bool hotReload)
     {
         SetupPrivateGloves();
+        AddCommand("test_acquire", "Probe native item acquisition: slot definition method", (caller, command) => {
+            var p = Utilities.GetPlayerFromSlot(int.Parse(command.GetArg(1)));
+            var pawn = p?.PlayerPawn.Value;
+            var weapon = pawn?.WeaponServices?.MyWeapons.Select(w => w.Value).FirstOrDefault(w => w != null && w.IsValid);
+            if (weapon == null || pawn?.ItemServices == null) return;
+            var item = weapon.AttributeManager.Item;
+            var saved = item.ItemDefinitionIndex;
+            try {
+                item.ItemDefinitionIndex = ushort.Parse(command.GetArg(2));
+                var services = new CCSPlayer_ItemServices(pawn.ItemServices.Handle);
+                var result = services.CanAcquire(item, (AcquireMethod)int.Parse(command.GetArg(3)));
+                Console.WriteLine($"[TEST ACQUIRE] slot={p!.Slot} definition={item.ItemDefinitionIndex} result={result}");
+            } finally { item.ItemDefinitionIndex = saved; }
+        });
+        AddCommand("test_purchase_event", "Synthetic purchase counter fixture: slot item", (caller, command) => {
+            var e = new EventItemPurchase(false) { Userid = Utilities.GetPlayerFromSlot(int.Parse(command.GetArg(1))), Weapon = command.GetArg(2) };
+            e.FireEvent(false);
+        });
+        AddCommand("test_money_state", "Inspect current money", (caller, command) => {
+            foreach (var p in Utilities.GetPlayers()) Console.WriteLine($"[TEST MONEY] slot={p.Slot} money={p.InGameMoneyServices?.Account}");
+        });
         AddCommand("test_fade_state", "Inspect bot pawn and attachment opacity: slot", (caller, command) => {
             var pawn=Utilities.GetPlayerFromSlot(int.Parse(command.GetArg(1)))?.PlayerPawn.Value;
             if(pawn==null) return;
@@ -171,6 +192,11 @@ public partial class TestDriver : BasePlugin
                     if(w?.DesignerName=="weapon_glock") Console.WriteLine($"[TEST GLOCK] slot={p.Slot} paint={w.FallbackPaintKit} item={w.AttributeManager.Item.ItemDefinitionIndex}");
                 }
             }
+        });
+        AddCommand("test_client", "Execute server-supported client command: slot command", (caller, command) => {
+            var player = Utilities.GetPlayerFromSlot(int.Parse(command.GetArg(1)));
+            var text = command.ArgString;
+            player?.ExecuteClientCommandFromServer(text[(text.IndexOf(' ') + 1)..]);
         });
         AddCommand("test_team", "Fixture team: slot team number", (caller, command) => {
             var p=Utilities.GetPlayerFromSlot(int.Parse(command.GetArg(1)));

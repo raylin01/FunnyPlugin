@@ -26,6 +26,7 @@ public static class CommandMatch
 
     public static void OnStartCommand(CCSPlayerController? caller, CommandInfo command)
     {
+        if (Funnies.Modules.GameSession.HandleLegacy(caller, command, "start")) return;
         if (!HasAccess(caller)) return;
 
         RunCommands(
@@ -55,6 +56,7 @@ public static class CommandMatch
 
     public static void OnStopCommand(CCSPlayerController? caller, CommandInfo command)
     {
+        if (Funnies.Modules.GameSession.HandleLegacy(caller, command, "stop")) return;
         if (!HasAccess(caller)) return;
 
         RunCommands(
@@ -76,6 +78,7 @@ public static class CommandMatch
 
     public static void OnMapCommand(CCSPlayerController? caller, CommandInfo command)
     {
+        if (Funnies.Modules.GameSession.HandleLegacy(caller, command, "map")) return;
         if (!HasAccess(caller)) return;
 
         var map = command.ArgString.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

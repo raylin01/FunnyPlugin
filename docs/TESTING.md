@@ -110,3 +110,15 @@ Additional integration cases worth exercising before a public release: overlappi
 ### Wallhack client validation completed
 
 The connected user confirmed green/yellow/orange/red health outlines through cover, then confirmed that all five restart cycles worked. Server snapshots also showed updated glow entities and colors through the fifth cycle. During the sequence the user switched to spectator; wallhack remained assigned to the viewer account, not the observed bots. Evidence is retained locally in the sibling .test-server/evidence/wallhack-client-round-check.log. These were explicit match restarts; natural halftime transitions and mixed-plugin integration are separate follow-up cases.
+
+### Admin setup validation
+
+Release build passed without warnings; 21 regression checks passed. Live commands assigned wallhack/both roles, put specials on T, manually moved the combined-role bot to CT, and preserved those teams through Start. Overtime toggled false/true in the engine. Changing to Mirage retained the human SteamID role, returned to warmup, and restored overtime enable/maxrounds/startmoney (true/6/10000). New bot names correctly received ordinary roles. Full natural overtime match completion and the interactive chat menu still need user validation.
+
+### Competitive rules and grenade budget
+
+Start now restores MR12, 1.92-minute rounds, 15-second freeze time, buy-zone-only purchases, 20-second buying, and moving/shooting bots. Server convars and bot movement/attacks confirmed these changes. Local startup defaults to competitive play; pass -RegressionMode for the old frozen-bot fixture. The grenade cap is configurable with !game nades <count|off>, shared across types, and exempts special players. Native CanAcquire probes plus synthetic item_purchase events verified exact limits 0, 1, 2, Off, and the special exemption; these probes do not constitute end-to-end client autobuy validation. Real user grenade purchases were logged as special=True and Allowed even at limit zero. Counts now reset before freeze time rather than after it. Rejection happens before item creation/payment, and autobuy guns are not blanket-blocked.
+
+Economy validation: live fresh-match Regular gave all players $800; Full initially gave the special player $16,000 and ordinary bots $800. The subsequent requested pistol exception is covered by regression checks for rounds 1, 13, 2, 14, 25, and Regular mode. Shorthanded bonus convar verified zero. Release build and 24 regression checks pass.
+
+The user then tested as an ordinary CT against an invisible T bot and reported that the setup seemed good. A fresh-match snapshot confirmed all players started the pistol round with 800 dollars and the human had no special role.

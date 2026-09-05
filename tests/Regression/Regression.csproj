@@ -3,5 +3,6 @@
   <ItemGroup>
     <Compile Include="../../src/Models/AttackLedger.cs" Link="AttackLedger.cs" />
     <Compile Include="../../src/Models/FadeTimeline.cs" Link="FadeTimeline.cs" />
+    <Compile Include="../../src/Models/GameSetup.cs" Link="GameSetup.cs" />
   </ItemGroup>
 </Project>

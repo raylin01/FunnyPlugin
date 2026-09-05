@@ -10,6 +10,8 @@ This branch requires **.NET 10** and **CounterStrikeSharp 1.0.373 or newer** (us
 2. Download the plugin from the [releases](https://github.com/Name2781/FunnyPlugin/releases) and put it in `server/game/csgo/addons/counterstrikesharp/plugins/Funnies`.
 
 ## Usage:
+Use `!game` for the admin setup menu: maps, multiple roles, automatic teams with manual moves before Start, and overtime (enabled by default). See [Admin setup](docs/ADMIN-SETUP.md).
+
 
 ### Commands:
 Note: Make sure you have the `@css/generic` permission otherwise you wont be able to use commands. https://docs.cssharp.dev/docs/admin-framework/defining-admins.html

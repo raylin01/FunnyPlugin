@@ -8,6 +8,7 @@ namespace Funnies;
 
 public class FunniesConfig : BasePluginConfig
 {
+    public Funnies.Models.GameSetup GameSetup { get; set; } = new();
     [JsonPropertyName("DebugDamage")] public bool DebugDamage { get; set; } = false;
     [JsonPropertyName("ColorR")] public byte R { get; set; } = 171;
     [JsonPropertyName("ColorG")] public byte G { get; set; } = 75;
@@ -63,6 +64,7 @@ public class FunniesPlugin : BasePlugin, IPluginConfig<FunniesConfig>
         GloveSuppression.Setup();
         MissPenalty.Setup();
         Economy.Setup();
+        GameSession.Setup();
     }
 
     public override void Unload(bool hotReload)

@@ -9,6 +9,11 @@ public class CommandWallhack
     public static void OnWallhackCommand(CCSPlayerController? caller, CommandInfo command)
     {
         if (!AdminManager.PlayerHasPermissions(caller, Globals.Config.AdminPermission)) return;
+        if (Globals.Config.GameSetup.Enabled)
+        {
+            command.ReplyToCommand("Match setup manages roles. Use !game role <player> wallhack/both/none.");
+            return;
+        }
         
         var player = Util.GetPlayerByName(command.ArgString);
 

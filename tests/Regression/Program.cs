@@ -43,4 +43,23 @@ Check(FadeTimeline.Alpha(11, 10, 12) == 255, "fixed first half remains visible")
 Check(FadeTimeline.Alpha(11.5f, 10, 12) == 127, "second half fades linearly");
 Check(FadeTimeline.Alpha(12, 10, 12) == 0, "fade ends at zero on schedule");
 Check(FadeTimeline.Alpha(10, 10, 10) == 0, "zero duration does not divide by zero");
+var setup = new GameSetup();
+setup.Roles["alice"] = "both";
+setup.Roles["bob"] = "invis";
+Check(setup.Overtime && setup.TeamFor("alice") == 2 && setup.TeamFor("bob") == 2 && setup.TeamFor("ordinary") == 3,
+    "simple setup puts all roles on T, others CT, with overtime enabled");
+setup.TeamOverrides["alice"] = 3;
+setup.SpecialTeam = 3;
+Check(setup.TeamFor("alice") == 3 && setup.TeamFor("ordinary") == 2, "manual moves override default team selection");
+setup.TeamOverrides["bob"] = 1;
+var restored = System.Text.Json.JsonSerializer.Deserialize<GameSetup>(System.Text.Json.JsonSerializer.Serialize(setup))!;
+Check(restored.TeamFor("bob") == 1 && restored.Roles["alice"] == "both", "saved setup preserves spectator overrides and combined roles");
+setup.TeamOverrides.Clear();
+setup.Roles.Remove("alice");
+Check(setup.TeamFor("alice") == 2 && setup.TeamFor("bob") == 3, "resetting teams and removing roles returns players to default sides");
+Check(setup.RoundGrant(1, 24) == 0 && setup.RoundGrant(13, 24) == 0, "full economy excludes both regulation pistol rounds");
+Check(setup.RoundGrant(2, 24) == 16000 && setup.RoundGrant(14, 24) == 16000 && setup.RoundGrant(25, 24) == 16000,
+    "full economy funds other regulation rounds and overtime");
+setup.SpecialEconomy = "regular";
+Check(setup.RoundGrant(2, 24) == 0 && setup.RoundGrant(25, 24) == 0, "regular economy never adds special cash");
 Console.WriteLine($"{count} regression checks passed.");
