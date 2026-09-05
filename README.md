@@ -4,6 +4,8 @@
 This plugin recreates the 1v5 but one person has wallhacks and the invisible man gamemode shown in dima_wallhacks and renyan videos for Counter Strike 2.
 
 ## Installation
+This branch requires **.NET 10** and **CounterStrikeSharp 1.0.373 or newer** (use the with-runtime distribution for a new server).
+
 1. Install [Counter Strike Sharp](https://docs.cssharp.dev/docs/guides/getting-started.html) on your server.
 2. Download the plugin from the [releases](https://github.com/Name2781/FunnyPlugin/releases) and put it in `server/game/csgo/addons/counterstrikesharp/plugins/Funnies`.
 
@@ -13,7 +15,7 @@ This plugin recreates the 1v5 but one person has wallhacks and the invisible man
 Note: Make sure you have the `@css/generic` permission otherwise you wont be able to use commands. https://docs.cssharp.dev/docs/admin-framework/defining-admins.html
 
 1. `!wallhack <player name>` gives a player wallhacks.
-2. `!invisible <player name>` makes a player invisible. Note: have the invisible person take off their skins that have StatTrak or nametags on them otherwise they won't be hidden.
+2. `!invisible <player name>` toggles invisibility. Player, weapons, and attached models share a fade timeline; fully faded entities are filtered from transmission. Custom glove/material behavior still requires client-side visual verification; see [testing notes](docs/TESTING.md).
 3. `!ak` gives the wallhacker/invisible player an AK-47 (works on either team).
 
 ### Admin Commands:
@@ -42,3 +44,8 @@ If you have any issues, feedback, or feature requests please make an issue on th
 
 ## License:
 This plugin is licensed under the MIT License. Feel free to use, modify, and distribute it in your servers. Attribution is appreciated but not required.
+### Invisibility cosmetic settings
+
+Use `!gloves enabled 1` (admin) or `css_gloves enabled 1` (server console) to disable glove skins for every player. The setting persists as `DisableGloveSkinsServerWide: true`. Owners also see default gloves; agent and weapon skins remain enabled. `!gloves enabled 0` restores tracked gloves. CounterStrikeSharp's `FollowCS2ServerGuidelines` must be `false` for the glove item updates.
+
+To hide the enemy name shown under the crosshair, set `mp_playerid 1` in your server/gamemode cfg. Teammate identification remains enabled; `mp_playerid 2` hides all target names instead.

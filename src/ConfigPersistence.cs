@@ -146,10 +146,8 @@ public static class ConfigPersistence
 
     private static string? ResolveConfigRoot()
     {
-        var assemblyLocation = Globals.Plugin.GetType().Assembly.Location;
-        if (string.IsNullOrWhiteSpace(assemblyLocation)) return null;
-
-        var pluginPath = Path.GetDirectoryName(assemblyLocation);
+        // Hot-reloaded assemblies can have no filesystem location. The loader supplies the real module directory.
+        var pluginPath = Globals.Plugin.ModuleDirectory;
         if (string.IsNullOrWhiteSpace(pluginPath)) return null;
 
         var marker = Path.Combine("addons", "counterstrikesharp");

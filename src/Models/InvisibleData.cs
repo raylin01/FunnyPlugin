@@ -4,6 +4,7 @@ namespace Funnies.Models;
 
 public class InvisibleData
 {
-    public CDynamicProp GlowEnt;
-    public CDynamicProp ModelRelay;
+    public required CDynamicProp GlowEnt;
+    public required CDynamicProp ModelRelay;
+    public uint PawnHandle;
 }

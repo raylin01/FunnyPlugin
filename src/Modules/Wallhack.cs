@@ -10,14 +10,14 @@ public class Wallhack
 {
     private static CCSPlayerController? GetPlayerBySlot(int slot)
     {
-        return Util.GetValidPlayers().FirstOrDefault(player => player.Slot == slot, null);
+        return Util.GetValidPlayers().FirstOrDefault(player => player.Slot == slot);
     }
 
     private static bool IsLivePlayer(CCSPlayerController? player)
     {
         return Util.IsPlayerValid(player) &&
                player.Team >= CsTeam.Terrorist &&
-               player.Team != CsTeam.Spectator;
+               player.PawnIsAlive;
     }
 
     private static void RemoveGlowForSlot(int slot)
@@ -34,14 +34,14 @@ public class Wallhack
 
     public static void OnTick()
     {
-        foreach (var entry in Globals.GlowData.ToList())
+        foreach (var target in Util.GetValidPlayers())
         {
-            if (!entry.Value.GlowEnt.IsValid) continue;
-
-            var target = GetPlayerBySlot(entry.Key);
-            if (!IsLivePlayer(target)) continue;
-
-            UpdateGlowColor(target!, entry.Value.GlowEnt);
+            if (!IsLivePlayer(target)) { RemoveGlowForSlot(target.Slot); continue; }
+            if (!Globals.GlowData.TryGetValue(target.Slot, out var data) ||
+                !data.GlowEnt.IsValid || !data.ModelRelay.IsValid || data.PawnHandle != target.PlayerPawn.Raw)
+                Glow(target);
+            else
+                UpdateGlowColor(target, data.GlowEnt);
         }
     }
 
@@ -95,13 +95,7 @@ public class Wallhack
     public static HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (!Util.IsPlayerValid(player)) return HookResult.Continue;
-
-        if (!Globals.GlowData.TryGetValue(player!.Slot, out var glowData)) return HookResult.Continue;
-        if (!glowData.GlowEnt.IsValid) return HookResult.Continue;
-
-        glowData.GlowEnt.Glow.GlowRange = 0;
-        glowData.GlowEnt.DispatchSpawn();
+        if (player != null) RemoveGlowForSlot(player.Slot);
 
         return HookResult.Continue;
     }
@@ -117,6 +111,7 @@ public class Wallhack
 
         Server.NextWorldUpdate(() => 
         {
+            if (!IsLivePlayer(player) || !glowData.GlowEnt.IsValid || !glowData.ModelRelay.IsValid) return;
             glowData.GlowEnt.SetModel(Util.GetPlayerModel(player));
             glowData.ModelRelay.SetModel(Util.GetPlayerModel(player));
         });
@@ -179,10 +174,13 @@ public class Wallhack
             health = player.PlayerPawn.Value.Health;
 
         var color = GetHealthColor(health);
+        if (glowEntity.Glow.GlowColorOverride.ToArgb() == color.ToArgb() &&
+            glowEntity.Glow.GlowRange == (health > 0 ? 5000 : 0)) return;
         glowEntity.Glow.GlowColorOverride = color;
         glowEntity.Glow.GlowRange = health > 0 ? 5000 : 0;
         glowEntity.Glow.GlowRangeMin = 0;
-        Utilities.SetStateChanged(glowEntity, "CGlowProperty", "m_glowColorOverride");
+        // Glow is embedded in the model entity; offsets inside CGlowProperty are not entity offsets.
+        Utilities.SetStateChanged(glowEntity, "CBaseModelEntity", "m_Glow");
     }
 
     private static void Glow(CCSPlayerController player)
@@ -193,7 +191,12 @@ public class Wallhack
 
         var glowEntity = Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic");
         var modelRelay = Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic");
-        if (glowEntity == null || modelRelay == null) return;
+        if (glowEntity == null || modelRelay == null)
+        {
+            if (glowEntity?.IsValid == true) glowEntity.Remove();
+            if (modelRelay?.IsValid == true) modelRelay.Remove();
+            return;
+        }
 
         modelRelay.Spawnflags = 256;
         modelRelay.Render = Color.Transparent;
@@ -214,6 +217,7 @@ public class Wallhack
         glowEntity.Glow.GlowColorOverride = GetHealthColor(health);
         glowEntity.Glow.GlowTeam = -1;
         glowEntity.Glow.GlowType = 3;
+        Utilities.SetStateChanged(glowEntity, "CBaseModelEntity", "m_Glow");
 
         modelRelay.AcceptInput("FollowEntity", player.Pawn.Value, null, "!activator");
         glowEntity.AcceptInput("FollowEntity", modelRelay, null, "!activator");
@@ -221,12 +225,17 @@ public class Wallhack
         RemoveGlowForSlot(player.Slot);
         Globals.GlowData[player.Slot] = new() {
             GlowEnt = glowEntity,
-            ModelRelay = modelRelay
+            ModelRelay = modelRelay,
+            PawnHandle = player.PlayerPawn.Raw
         };
     }
 
     public static void Setup()
     {
+        Globals.Plugin.RegisterListener<Listeners.OnMapStart>(_ => {
+            Globals.GlowData.Clear();
+            Globals.Wallhackers.Clear();
+        });
         Globals.Plugin.RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         Globals.Plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         Globals.Plugin.RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn, HookMode.Post);
