@@ -1,0 +1,65 @@
+using Funnies.Models;
+
+var count = 0;
+void Check(bool ok, string description) { if (!ok) throw new Exception(description); Console.WriteLine($"PASS {description}"); count++; }
+
+var ledger = new AttackLedger();
+ledger.Record(1, 10, 100, 2);
+ledger.Hit(1, 10, 100);
+Check(ledger.Collect(102).Single().Hit, "successful gun hit is exempt");
+ledger.Record(1, 10, 110, 2);
+Check(!ledger.Collect(112).Single().Hit, "miss incurs a single penalty");
+ledger.Hit(1, 20, 120);
+ledger.Record(1, 20, 120, 5);
+Check(ledger.Collect(122).Single().Hit, "damage before attack callback is matched");
+var swing = ledger.Record(1, 20, 130, 5);
+Check(ReferenceEquals(swing, ledger.Record(1, 20, 131, 5)), "knife event and cooldown observation deduplicate");
+ledger.Collect(132);
+ledger.Record(1, 10, 140, 2);
+ledger.Hit(1, 20, 140);
+Check(!ledger.Collect(142).Single().Hit, "unrelated knife hit does not cancel gun miss");
+var he1 = ledger.Record(1, 1000, 150, 5, true);
+var he2 = ledger.Record(1, 1001, 151, 5, true);
+ledger.Hit(1, 1001, 300, true);
+Check(!he1.Hit && he2.Hit, "overlapping throws use distinct projectile handles");
+Check(ledger.Collect(1000).Count == 0, "grenade does not expire on arbitrary throw timer");
+he1.FinishTick = 1002; he2.FinishTick = 1002;
+Check(ledger.Collect(1002).Count == 2, "grenade attempts finish at lifecycle end");
+var fire = ledger.Record(1, 2000, 1100, 5, true);
+ledger.Hit(1, 2000, 1700, true);
+fire.FinishTick = 1802;
+Check(ledger.Collect(1802).Single().Hit, "late burn damage still exempts the throw");
+ledger.Record(1, 10, 2000, 2);
+ledger.Cancel(1);
+Check(ledger.Collect(2002).Count == 0, "death cancels old-life penalties");
+ledger.Record(1, 10, 2010, 2);
+ledger.Hit(2, 10, 2010);
+Check(!ledger.Collect(2012).Single().Hit, "different pawn cannot claim attack credit");
+ledger.Record(1, 10, 2020, 2);
+ledger.Clear();
+Check(ledger.Collect(3000).Count == 0, "round reset clears pending work");
+Check(FadeTimeline.Alpha(10, 10, 12) == 255, "reveal starts fully visible");
+Check(FadeTimeline.Alpha(11, 10, 12) == 255, "fixed first half remains visible");
+Check(FadeTimeline.Alpha(11.5f, 10, 12) == 127, "second half fades linearly");
+Check(FadeTimeline.Alpha(12, 10, 12) == 0, "fade ends at zero on schedule");
+Check(FadeTimeline.Alpha(10, 10, 10) == 0, "zero duration does not divide by zero");
+var setup = new GameSetup();
+setup.Roles["alice"] = "both";
+setup.Roles["bob"] = "invis";
+Check(setup.Overtime && setup.TeamFor("alice") == 2 && setup.TeamFor("bob") == 2 && setup.TeamFor("ordinary") == 3,
+    "simple setup puts all roles on T, others CT, with overtime enabled");
+setup.TeamOverrides["alice"] = 3;
+setup.SpecialTeam = 3;
+Check(setup.TeamFor("alice") == 3 && setup.TeamFor("ordinary") == 2, "manual moves override default team selection");
+setup.TeamOverrides["bob"] = 1;
+var restored = System.Text.Json.JsonSerializer.Deserialize<GameSetup>(System.Text.Json.JsonSerializer.Serialize(setup))!;
+Check(restored.TeamFor("bob") == 1 && restored.Roles["alice"] == "both", "saved setup preserves spectator overrides and combined roles");
+setup.TeamOverrides.Clear();
+setup.Roles.Remove("alice");
+Check(setup.TeamFor("alice") == 2 && setup.TeamFor("bob") == 3, "resetting teams and removing roles returns players to default sides");
+Check(setup.RoundGrant(1, 24) == 0 && setup.RoundGrant(13, 24) == 0, "full economy excludes both regulation pistol rounds");
+Check(setup.RoundGrant(2, 24) == 16000 && setup.RoundGrant(14, 24) == 16000 && setup.RoundGrant(25, 24) == 16000,
+    "full economy funds other regulation rounds and overtime");
+setup.SpecialEconomy = "regular";
+Check(setup.RoundGrant(2, 24) == 0 && setup.RoundGrant(25, 24) == 0, "regular economy never adds special cash");
+Console.WriteLine($"{count} regression checks passed.");

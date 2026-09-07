@@ -5,7 +5,7 @@ namespace Funnies;
 
 public static class Globals
 {
-    public static FunniesConfig Config { get; set; }
+    public static FunniesConfig Config { get; set; } = new();
     public static HashSet<int> Wallhackers = [];
     public static Dictionary<int, InvisibleData> GlowData = [];
 

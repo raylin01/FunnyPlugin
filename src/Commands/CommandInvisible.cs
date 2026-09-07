@@ -11,33 +11,29 @@ public class CommandInvisible
     public static void OnInvisibleCommand(CCSPlayerController? caller, CommandInfo command)
     {
         if (!AdminManager.PlayerHasPermissions(caller, Globals.Config.AdminPermission)) return;
+        if (Globals.Config.GameSetup.Enabled)
+        {
+            command.ReplyToCommand("Match setup manages roles. Use !game role <player> invis/both/none.");
+            return;
+        }
 
         var player = Util.GetPlayerByName(command.ArgString);
 
         if (player != null)
         {
-            if (Util.IsPlayerValid(caller))
-                Util.ServerPrintToChat(caller!, $"Toggled invisiblity on {command.ArgString}");
-
             if (Globals.InvisiblePlayers.Remove(player))
             {
-                var pawn = player.PlayerPawn.Value;
-                pawn!.Render = Color.FromArgb(255, pawn.Render);
-                Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
-
-                foreach (var weapon in pawn.WeaponServices!.MyWeapons)
-                {
-                    weapon.Value!.Render = pawn!.Render;
-                    Utilities.SetStateChanged(weapon.Value, "CBaseModelEntity", "m_clrRender");
-                }
+                command.ReplyToCommand($"Invisibility disabled: {player.PlayerName}");
             }
             else
+            {
                 Globals.InvisiblePlayers.Add(player, new());
+                command.ReplyToCommand($"Invisibility enabled: {player.PlayerName}");
+            }
         }
         else
         {
-            if (Util.IsPlayerValid(caller))
-                Util.ServerPrintToChat(caller!, $"Player {command.ArgString} not found");
+            command.ReplyToCommand($"Player {command.ArgString} not found");
         }
     }
 }

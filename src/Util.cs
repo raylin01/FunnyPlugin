@@ -19,7 +19,7 @@ public static class Util
                plr.IsValid &&
                plr.PlayerPawn != null &&
                plr.PlayerPawn.IsValid &&
-               plr.Connected == PlayerConnectedState.PlayerConnected &&
+               plr.Connected == PlayerConnectedState.Connected &&
                !plr.IsHLTV;
 
     public static List<CCSPlayerController> GetValidPlayers() => [.. Utilities.GetPlayers().Where(IsPlayerValid)];
@@ -51,8 +51,9 @@ public static class Util
     {
         var children = new List<CGameSceneNode>();
         var stack = new Stack<CGameSceneNode>();
+        var visited = new HashSet<IntPtr>();
 
-        for (var child = gameSceneNode.Child; child != null; child = child.NextSibling)
+        for (var child = gameSceneNode.Child; child != null && visited.Add(child.Handle); child = child.NextSibling)
             stack.Push(child);
 
         // Traverse without mutating the collection being iterated.
@@ -61,7 +62,7 @@ public static class Util
             var node = stack.Pop();
             children.Add(node);
 
-            for (var child = node.Child; child != null; child = child.NextSibling)
+            for (var child = node.Child; child != null && visited.Add(child.Handle); child = child.NextSibling)
                 stack.Push(child);
         }
 

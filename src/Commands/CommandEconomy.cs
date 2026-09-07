@@ -10,6 +10,11 @@ public static class CommandEconomy
     public static void OnSpecialMoneyCommand(CCSPlayerController? caller, CommandInfo command)
     {
         if (!HasAccess(caller)) return;
+        if (Globals.Config.GameSetup.Enabled)
+        {
+            command.ReplyToCommand("Use !game economy full or !game economy regular for managed games.");
+            return;
+        }
 
         var args = SplitArguments(command.ArgString);
         if (args.Count == 0 || args[0].Equals("show", StringComparison.OrdinalIgnoreCase))

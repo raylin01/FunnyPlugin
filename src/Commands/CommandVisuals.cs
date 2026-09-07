@@ -6,6 +6,28 @@ namespace Funnies.Commands;
 
 public static class CommandVisuals
 {
+    public static void OnGlovesCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        if (!HasAccess(caller)) return;
+        var args = SplitArguments(command.ArgString);
+        if (args.Count == 0 || args[0].Equals("show", StringComparison.OrdinalIgnoreCase)) {
+            Reply(caller, $"Server-wide glove skin suppression: {Globals.Config.DisableGloveSkinsServerWide}");
+            return;
+        }
+        if (args.Count != 2 || !args[0].Equals("enabled", StringComparison.OrdinalIgnoreCase) || !TryParseBool(args[1], out var enabled)) {
+            Reply(caller, "Usage: !gloves <show|enabled 0|enabled 1>");
+            return;
+        }
+        if (enabled && CoreConfig.FollowCS2ServerGuidelines) {
+            Reply(caller, "Glove suppression requires FollowCS2ServerGuidelines=false in CounterStrikeSharp core.json, followed by css_core_reload.");
+            return;
+        }
+        Globals.Config.DisableGloveSkinsServerWide = enabled;
+        Modules.GloveSuppression.OnTick();
+        Reply(caller, $"Server-wide glove skin suppression set to: {enabled} (including owners' first-person gloves)");
+        PersistConfigReply(caller);
+    }
+
     public static void OnSkinsCommand(CCSPlayerController? caller, CommandInfo command)
     {
         if (!HasAccess(caller)) return;

@@ -400,3 +400,5 @@ FodyWeavers.xsd
 *.sln.iml
 
 build.bat
+.build-home/
+.nuget/

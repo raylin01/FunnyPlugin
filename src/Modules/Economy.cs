@@ -1,6 +1,9 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Cvars;
+using CounterStrikeSharp.API.Modules.Memory;
+using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Utils;
 using Funnies.Commands;
 
@@ -10,15 +13,14 @@ public static class Economy
 {
     public const int MaxSupportedMoney = 65535;
 
-    private static readonly Dictionary<int, int> GrenadeBuysBySlot = [];
+    private static readonly Dictionary<string, int> GrenadeBuysBySlot = [];
+    private static string Buyer(CCSPlayerController p) => p.IsBot ? $"bot:{p.EntityHandle.Raw}" : p.SteamID.ToString();
     private static int _currentRound;
 
     public static int CurrentRound => _currentRound;
 
     public static HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
-        GrenadeBuysBySlot.Clear();
-
         if (IsWarmupRound())
         {
             _currentRound = 0;
@@ -28,7 +30,7 @@ public static class Economy
         var roundFromRules = GetRoundFromGameRules();
         _currentRound = roundFromRules ?? Math.Max(1, _currentRound + 1);
 
-        if (Globals.Config.SpecialPlayerRoundMoneyEnabled && IsConfiguredMoneyRound(_currentRound))
+        if (!Globals.Config.GameSetup.Enabled && Globals.Config.SpecialPlayerRoundMoneyEnabled && IsConfiguredMoneyRound(_currentRound))
         {
             var specialMoney = GetEffectiveSpecialMoneyAmount();
             EnforceSpecialMoneyLimit(specialMoney);
@@ -47,7 +49,7 @@ public static class Economy
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
 
-        GrenadeBuysBySlot.Remove(player!.Slot);
+        // Preserve human purchase counts through reconnects until the next round.
         return HookResult.Continue;
     }
 
@@ -55,6 +57,8 @@ public static class Economy
     {
         var player = @event.Userid;
         if (!Util.IsPlayerValid(player)) return HookResult.Continue;
+        if (Globals.Config.DebugDamage && IsGrenadeWeapon(NormalizeWeaponName(@event.Weapon ?? "")))
+            Console.WriteLine($"[Funnies grenade purchase] slot={player.Slot} item={@event.Weapon} special={Util.IsSpecialPlayer(player)} used={GrenadeBuysBySlot.GetValueOrDefault(Buyer(player))} limit={Globals.Config.NonSpecialGrenadeBuyLimit}");
 
         if (ShouldTopUpSpecialMoney(player!))
         {
@@ -66,20 +70,39 @@ public static class Economy
         if (Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
         if (Util.IsSpecialPlayer(player!)) return HookResult.Continue;
 
-        var grenadeLimit = Math.Max(0, Globals.Config.NonSpecialGrenadeBuyLimit);
         var purchasedWeapon = NormalizeWeaponName(@event.Weapon ?? string.Empty);
         if (!IsGrenadeWeapon(purchasedWeapon)) return HookResult.Continue;
 
-        var buys = GrenadeBuysBySlot.GetValueOrDefault(player.Slot) + 1;
-        GrenadeBuysBySlot[player.Slot] = buys;
+        GrenadeBuysBySlot[Buyer(player)] = GrenadeBuysBySlot.GetValueOrDefault(Buyer(player)) + 1;
 
-        if (buys > grenadeLimit || CountThrowableInventory(player) > grenadeLimit)
-        {
-            RemoveOneThrowable(player, purchasedWeapon);
-            GrenadeBuysBySlot[player.Slot] = grenadeLimit;
-            Util.ServerPrintToChat(player, $"You can only buy {grenadeLimit} grenade(s) per round.");
-        }
+        return HookResult.Continue;
+    }
 
+    private static HookResult OnCanAcquire(DynamicHook hook)
+    {
+        if (!Globals.Config.LimitNonSpecialGrenadeBuys || Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
+        var method = hook.GetParam<AcquireMethod>(2);
+        if (method is not (AcquireMethod.Buy or AcquireMethod.BuyWithCtrl)) return HookResult.Continue;
+        var item = hook.GetParam<CEconItemView>(1);
+        if (item.ItemDefinitionIndex is not (43 or 44 or 45 or 46 or 47 or 48 or 68)) return HookResult.Continue;
+        var services = hook.GetParam<CCSPlayer_ItemServices>(0);
+        var player = Util.GetValidPlayers().FirstOrDefault(p => p.PlayerPawn.Value?.ItemServices?.Handle == services.Handle);
+        if (player == null || Util.IsSpecialPlayer(player)) return HookResult.Continue;
+        if (GrenadeBuysBySlot.GetValueOrDefault(Buyer(player)) < Globals.Config.NonSpecialGrenadeBuyLimit) return HookResult.Continue;
+        // Reject before money is charged or an item is created, including autobuy.
+        hook.SetReturn(AcquireResult.ReachedGrenadeTotalLimit);
+        return HookResult.Handled;
+    }
+
+    private static HookResult OnAcquireResult(DynamicHook hook)
+    {
+        if (!Globals.Config.DebugDamage) return HookResult.Continue;
+        var item = hook.GetParam<CEconItemView>(1);
+        if (item.ItemDefinitionIndex is not (43 or 44 or 45 or 46 or 47 or 48 or 68)) return HookResult.Continue;
+        var services = hook.GetParam<CCSPlayer_ItemServices>(0);
+        var player = Util.GetValidPlayers().FirstOrDefault(p => p.PlayerPawn.Value?.ItemServices?.Handle == services.Handle);
+        if (player != null)
+            Console.WriteLine($"[Funnies grenade acquire] slot={player.Slot} item={item.ItemDefinitionIndex} method={hook.GetParam<AcquireMethod>(2)} result={hook.GetReturn<AcquireResult>()} special={Util.IsSpecialPlayer(player)} used={GrenadeBuysBySlot.GetValueOrDefault(Buyer(player))} limit={Globals.Config.NonSpecialGrenadeBuyLimit}");
         return HookResult.Continue;
     }
 
@@ -97,10 +120,11 @@ public static class Economy
     {
         if (!Util.IsPlayerValid(caller)) return HookResult.Continue;
         if (!Globals.Config.LimitNonSpecialGrenadeBuys) return HookResult.Continue;
+        if (Globals.Config.NonSpecialGrenadeBuyLimit < 0) return HookResult.Continue;
         if (Util.IsSpecialPlayer(caller!)) return HookResult.Continue;
 
         var grenadeLimit = Math.Max(0, Globals.Config.NonSpecialGrenadeBuyLimit);
-        var currentGrenadeBuys = GrenadeBuysBySlot.GetValueOrDefault(caller.Slot);
+        var currentGrenadeBuys = GrenadeBuysBySlot.GetValueOrDefault(Buyer(caller));
         if (currentGrenadeBuys < grenadeLimit) return HookResult.Continue;
 
         if (inspectArguments)
@@ -141,6 +165,7 @@ public static class Economy
 
     private static bool ShouldTopUpSpecialMoney(CCSPlayerController player)
     {
+        if (Globals.Config.GameSetup.Enabled) return false;
         return Globals.Config.SpecialPlayerRoundMoneyEnabled &&
                IsConfiguredMoneyRound(_currentRound) &&
                Util.IsSpecialPlayer(player);
@@ -206,59 +231,27 @@ public static class Economy
                weaponName.Contains("tagrenade");
     }
 
-    private static int CountThrowableInventory(CCSPlayerController player)
-    {
-        var pawn = player.PlayerPawn?.Value;
-        if (pawn == null || !pawn.IsValid) return 0;
-
-        var total = 0;
-        foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
-        {
-            var weapon = weaponHandle.Value;
-            if (weapon == null || !weapon.IsValid) continue;
-
-            var weaponName = NormalizeWeaponName(weapon.DesignerName);
-            if (IsGrenadeWeapon(weaponName))
-                total++;
-        }
-
-        return total;
-    }
-
-    private static void RemoveOneThrowable(CCSPlayerController player, string preferredWeaponName)
-    {
-        var pawn = player.PlayerPawn?.Value;
-        if (pawn == null || !pawn.IsValid) return;
-
-        CBaseEntity? fallback = null;
-        foreach (var weaponHandle in pawn.WeaponServices!.MyWeapons)
-        {
-            var weapon = weaponHandle.Value;
-            if (weapon == null || !weapon.IsValid) continue;
-
-            var weaponName = NormalizeWeaponName(weapon.DesignerName);
-            if (!IsGrenadeWeapon(weaponName)) continue;
-
-            if (weaponName == preferredWeaponName)
-            {
-                weapon.Remove();
-                return;
-            }
-
-            fallback ??= weapon;
-        }
-
-        fallback?.Remove();
-    }
-
     public static void Setup()
     {
+        VirtualFunctions.CCSPlayer_ItemServices_CanAcquireFunc.Hook(OnCanAcquire, HookMode.Pre);
+        VirtualFunctions.CCSPlayer_ItemServices_CanAcquireFunc.Hook(OnAcquireResult, HookMode.Post);
+        Globals.Plugin.RegisterEventHandler<EventRoundPrestart>((_, _) => {
+            GrenadeBuysBySlot.Clear();
+            Globals.Plugin.AddTimer(0.2f, () => {
+                if (Globals.Config.GameSetup is { Enabled: true, Live: true } setup && !IsWarmupRound())
+                {
+                    var amount = setup.RoundGrant(GetRoundFromGameRules() ?? 0, ConVar.Find("mp_maxrounds")?.GetPrimitiveValue<int>() ?? 24);
+                    if (amount > 0) GrantSpecialPlayersMoney(amount);
+                }
+            }, CounterStrikeSharp.API.Modules.Timers.TimerFlags.STOP_ON_MAPCHANGE);
+            return HookResult.Continue;
+        });
+        Globals.Plugin.RegisterListener<Listeners.OnMapStart>(_ => { GrenadeBuysBySlot.Clear(); _currentRound = 0; });
         Globals.Plugin.RegisterEventHandler<EventRoundStart>(OnRoundStart);
         Globals.Plugin.RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
         Globals.Plugin.RegisterEventHandler<EventItemPurchase>(OnItemPurchase);
         Globals.Plugin.AddCommandListener("buy", OnBuyCommand, HookMode.Pre);
-        Globals.Plugin.AddCommandListener("autobuy", OnAutoBuyCommand, HookMode.Pre);
-        Globals.Plugin.AddCommandListener("rebuy", OnAutoBuyCommand, HookMode.Pre);
+        // CanAcquire checks each autobuy/rebuy item without blocking gun purchases.
 
         Globals.Plugin.AddCommand("css_specialmoney", "Configures special player round money rules", CommandEconomy.OnSpecialMoneyCommand);
         Globals.Plugin.AddCommand("css_nadelimit", "Configures grenade buy limit for non-special players", CommandEconomy.OnNadeLimitCommand);
@@ -267,6 +260,8 @@ public static class Economy
 
     public static void Cleanup()
     {
+        VirtualFunctions.CCSPlayer_ItemServices_CanAcquireFunc.Unhook(OnCanAcquire, HookMode.Pre);
+        VirtualFunctions.CCSPlayer_ItemServices_CanAcquireFunc.Unhook(OnAcquireResult, HookMode.Post);
         GrenadeBuysBySlot.Clear();
         _currentRound = 0;
     }
